@@ -8,6 +8,9 @@ import AnnualLeavePage     from '@/pages/AnnualLeavePage'
 import BranchTechnicalPage from '@/pages/BranchTechnicalPage'
 import EmployeesPage       from '@/pages/EmployeesPage'
 import BranchesPage        from '@/pages/BranchesPage'
+import SickLeavePage       from '@/pages/SickLeavePage'
+import InsteadOfPage       from '@/pages/InsteadOfPage'
+import SchedulePage        from '@/pages/SchedulePage'
 
 // ── Protected layout wrapper ──────────────────────────────────────────────
 // Redirects to /login if user is not authenticated.
@@ -36,7 +39,10 @@ export default function App() {
         <Route path="/branch-technical" element={<BranchTechnicalPage />} />
         <Route path="/employees"        element={<EmployeesPage />} />
         <Route path="/branches"         element={<BranchesPage />} />
-        {/* Future: /sick-leave, /day-off, /instead-of, /upload */}
+        <Route path="/sick-leave"       element={<SickLeavePage />} />
+        <Route path="/instead-of"       element={<InsteadOfPage />} />
+        <Route path="/schedule"         element={<SchedulePage />} />
+        {/* Future: /day-off, /upload */}
       </Route>
 
       {/* Fallback */}

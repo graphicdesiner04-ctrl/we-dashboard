@@ -75,7 +75,7 @@ export const EMPLOYEES: Employee[] = [
   {
     id: 'emp-18', user: 'wael.m165124',         domainName: 'Wael.M165124',
     name: '', nameEn: 'Wael Mohamed Abd-Taleb Mohamed',
-    email: 'Wael.M165124@te.eg', mobile: '', nationalId: '', employeeCode: '165124',
+    email: 'Wael.M165124@te.eg', mobile: '01004286698', nationalId: '29112072404515', employeeCode: '165124',
     level: 8, role: 'Agent',
     operatorAccount: 'Wael Mohamed Abd-Taleb Mohamed',
     dsPortalName: 'Wael Mohamed Abd-Taleb Mohamed',
@@ -89,9 +89,9 @@ export const EMPLOYEES: Employee[] = [
     dsPortalName: 'Assem Mohamed Gamal El-Din Mohamed Abd El-Aziz',
   },
   {
-    id: 'emp-20', user: 'mahmoud.h.moursy',     domainName: 'Mahmoud.h.moursy',
+    id: 'emp-20', user: 'mahmoud.h.moursy',     domainName: 'Mahmoud.H.Moursy',
     name: '', nameEn: 'Mahmoud Hamdy Abdelwahab',
-    email: 'Mahmoud.h.moursy@te.eg', mobile: '1007653329', nationalId: '', employeeCode: '7703',
+    email: 'Mahmoud.H.Moursy@te.eg', mobile: '01007653329', nationalId: '29403212400412', employeeCode: '7703',
     level: 8, role: 'Agent',
     operatorAccount: 'Mahmoud Hamdy Abdelwahab Moursy',
     dsPortalName: 'Mahmoud Hamdy Abdelwahab',
@@ -181,7 +181,7 @@ export const EMPLOYEES: Employee[] = [
   {
     id: 'emp-30', user: 'ahmed.zaref',          domainName: 'Ahmed.Zaref',
     name: '', nameEn: 'Ahmed Zarief Mohamed Abd-El Hafez',
-    email: 'Ahmed.Zaref@te.eg', mobile: '1026337221', nationalId: '29405282400838', employeeCode: '9070',
+    email: 'Ahmed.Zaref@te.eg', mobile: '01113429605', nationalId: '29405282400838', employeeCode: '9070',
     level: 8, role: 'Agent',
     operatorAccount: 'Ahmed Zareef Mohamed Abd ElHafez',
     dsPortalName: 'Ahmed Zarief Mohamed Abd-El Hafez',
@@ -206,7 +206,7 @@ export const EMPLOYEES: Employee[] = [
     // ⚠ domain corrected: m239015 (sheet) — was mz39015 in previous import
     id: 'emp-33', user: 'mahmoud.m239015',      domainName: 'Mahmoud.m239015',
     name: '', nameEn: 'Mahmoud Mohamed Ismail Arafat',
-    email: 'Mahmoud.m239015@te.eg', mobile: '', nationalId: '', employeeCode: '239015',
+    email: 'Mahmoud.m239015@te.eg', mobile: '01151500974', nationalId: '29502052402438', employeeCode: '239015',
     level: 8, role: 'Agent',
     operatorAccount: 'Mahmoud Mohamed Ismail Arafat',
     dsPortalName: 'Mahmoud Mohamed Ismail Arafat',
@@ -230,7 +230,7 @@ export const EMPLOYEES: Employee[] = [
   {
     id: 'emp-37', user: 'xcc.hany.331230',      domainName: 'xcc.Hany.331230',
     name: '', nameEn: 'Hany Mohsen Ahmed Fakhry',
-    email: 'xcc.Hany.331230@te.eg', mobile: '', nationalId: '', employeeCode: '331230',
+    email: 'xcc.Hany.331230@te.eg', mobile: '01027728590', nationalId: '29710012405631', employeeCode: '331230',
     level: 8, role: 'Agent',
     operatorAccount: 'Hany Mohsen Ahmed Fakhry',
     dsPortalName: 'Hany Mohsen Ahmed Fakhry',

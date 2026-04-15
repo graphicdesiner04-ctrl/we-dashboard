@@ -7,14 +7,15 @@ import { useAuth }  from '@/context/AuthContext'
 
 const TITLES: Record<string, string> = {
   '/overview':         'نظرة عامة',
+  '/schedule':         'الجدول',
   '/permissions':      'ساعات الإذن',
   '/annual-leave':     'الإجازة السنوية',
+  '/sick-leave':       'الإجازة المرضية',
+  '/instead-of':       'بدلاً من',
   '/branch-technical': 'البنية التقنية للفروع',
   '/employees':        'إدارة الموظفين',
   '/branches':         'إدارة الفروع والتكليفات',
-  '/sick-leave':       'الإجازة المرضية',
   '/day-off':          'العمل في الإجازة',
-  '/instead-of':       'بدلاً من',
   '/upload':           'مركز الرفع',
 }
 

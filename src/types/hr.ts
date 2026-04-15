@@ -161,6 +161,24 @@ export interface InsteadOfRecord {
   createdAt: string
 }
 
+// ── Schedule ──────────────────────────────────────────────────────────────
+// One entry = one employee assigned to one branch on one calendar date.
+// Alert fires when scheduledBranchId ≠ employee's current assignment branch.
+export interface ScheduleEntry {
+  id: string
+  employeeId: string
+  branchId: string
+  date: string          // YYYY-MM-DD
+  note: string
+  createdAt: string
+}
+
+export interface ScheduleAlert {
+  entry: ScheduleEntry
+  currentBranchId: string | null   // from active assignment
+  scheduledBranchId: string        // from this entry
+}
+
 // ── Branch Asset Inventory ────────────────────────────────────────────────
 // One record per physical asset (Router, Switch, UPS, Printer, Fingerprint…)
 export interface BranchAsset {

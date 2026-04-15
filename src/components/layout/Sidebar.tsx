@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Clock, Calendar, HeartPulse,
   CalendarOff, Repeat2, Upload, Server,
-  Users, GitBranch,
+  Users, GitBranch, CalendarDays,
   ChevronLeft, ChevronRight, X, LogOut,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -13,19 +13,20 @@ import { useAuth } from '@/context/AuthContext'
 // ── Nav structure ─────────────────────────────────────────────────────────
 
 const MAIN_NAV = [
-  { path: '/overview',         icon: LayoutDashboard, label: 'نظرة عامة'        },
-  { path: '/permissions',      icon: Clock,           label: 'ساعات الإذن'     },
-  { path: '/annual-leave',     icon: Calendar,        label: 'الإجازة السنوية' },
-  { path: '/branch-technical', icon: Server,          label: 'البنية التقنية'  },
-  { path: '/employees',        icon: Users,           label: 'الموظفون'        },
-  { path: '/branches',         icon: GitBranch,       label: 'الفروع والتكليفات' },
+  { path: '/overview',         icon: LayoutDashboard, label: 'نظرة عامة'           },
+  { path: '/schedule',         icon: CalendarDays,    label: 'الجدول'              },
+  { path: '/permissions',      icon: Clock,           label: 'ساعات الإذن'        },
+  { path: '/annual-leave',     icon: Calendar,        label: 'الإجازة السنوية'    },
+  { path: '/sick-leave',       icon: HeartPulse,      label: 'الإجازة المرضية'    },
+  { path: '/instead-of',       icon: Repeat2,         label: 'بدلاً من'           },
+  { path: '/branch-technical', icon: Server,          label: 'البنية التقنية'     },
+  { path: '/employees',        icon: Users,           label: 'الموظفون'           },
+  { path: '/branches',         icon: GitBranch,       label: 'الفروع والتكليفات'  },
 ]
 
 const SOON_NAV = [
-  { path: '/sick-leave',  icon: HeartPulse,  label: 'الإجازة المرضية'  },
-  { path: '/day-off',     icon: CalendarOff, label: 'العمل في الإجازة' },
-  { path: '/instead-of',  icon: Repeat2,     label: 'بدلاً من'         },
-  { path: '/upload',      icon: Upload,      label: 'مركز الرفع'       },
+  { path: '/day-off', icon: CalendarOff, label: 'العمل في الإجازة' },
+  { path: '/upload',  icon: Upload,      label: 'مركز الرفع'       },
 ]
 
 // ── Logo ring ─────────────────────────────────────────────────────────────
