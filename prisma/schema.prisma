@@ -1,0 +1,232 @@
+// ── WE Technical Support Dashboard — Prisma Schema ───────────────────────
+// Target:  PostgreSQL
+// Migrate: npx prisma migrate dev --name init
+// Client:  npx prisma generate
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Auth / Users ──────────────────────────────────────────────────────────
+
+model User {
+  id         String   @id @default(cuid())
+  name       String
+  role       UserRole
+  username   String   @unique  // domain format: Ahmed.G.Hafez
+  password   String            // bcrypt hash in production
+  employeeId String?  @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+}
+
+enum UserRole {
+  Senior
+  Supervisor
+  Admin
+}
+
+// ── Employees (Agent sheet) ───────────────────────────────────────────────
+
+model Employee {
+  id               String        @id @default(cuid())
+  employeeCode     String?
+  domainName       String        @unique  // unique key, case-insensitive
+  userLogin        String        @unique  // domainName.trim().toLowerCase()
+  nameAr           String?               // Arabic display name
+  nameEn           String?               // English name (DS Portal Name)
+  email            String?
+  mobile           String?
+  nationalId       String?
+  level            Int?                  // 7 = Senior, 8 = Agent
+  role             EmployeeRole?
+  operatorAccount  String?
+  dsPortalName     String?
+
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user             User?
+  assignments      AssignmentHistory[]
+  permissionRecs   PermissionRecord[]
+  annualLeaveRecs  AnnualLeaveRecord[]
+  sickLeaveRecs    SickLeaveRecord[]
+  dayOffRecs       WorkingDayOffRecord[]
+  insteadOfRecs    InsteadOfRecord[]     @relation("WorkingEmployee")
+  replacedInRecs   InsteadOfRecord[]     @relation("ReplacedEmployee")
+}
+
+enum EmployeeRole {
+  Senior
+  Agent
+}
+
+// ── Branches (CSO sheet) ──────────────────────────────────────────────────
+
+model Branch {
+  id         String   @id @default(cuid())
+  ou         String   @unique
+  storeName  String
+  ext1       String?
+  ext2       String?
+  ext3       String?
+  extSenior  String?
+  test1      String?
+  test2      String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  assignments      AssignmentHistory[]
+  technicalProfile BranchTechnicalProfile?
+  assets           BranchAsset[]
+  permissionRecs   PermissionRecord[]
+  annualLeaveRecs  AnnualLeaveRecord[]
+  sickLeaveRecs    SickLeaveRecord[]
+  dayOffRecs       WorkingDayOffRecord[]
+  insteadOfRecs    InsteadOfRecord[]
+}
+
+// ── Assignment History ────────────────────────────────────────────────────
+
+model AssignmentHistory {
+  id          String    @id @default(cuid())
+  employeeId  String
+  branchId    String
+  fromDate    DateTime
+  toDate      DateTime?             // null = currently assigned
+  note        String?
+
+  createdAt   DateTime  @default(now())
+
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  branch      Branch    @relation(fields: [branchId],   references: [id])
+}
+
+// ── Branch Technical Profile ──────────────────────────────────────────────
+
+model BranchTechnicalProfile {
+  id           String   @id @default(cuid())
+  branchId     String   @unique
+  code         String?
+  gateway      String?
+  subnetMask   String?
+  printer      String?
+  fingerPrint  String?
+  pcSenior     String?
+  ipQ          String?
+
+  userIps      String[]
+  dnsEntries   String[]
+  pcNames      String[]
+  macAddresses String[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  branch       Branch   @relation(fields: [branchId], references: [id])
+  profileRows  BranchProfileRow[]
+}
+
+// Extra key/value rows from technical sheet (Router, Switch, UPS…)
+model BranchProfileRow {
+  id        String                 @id @default(cuid())
+  profileId String
+  label     String
+  value     String?
+  order     Int                    @default(0)
+
+  profile   BranchTechnicalProfile @relation(fields: [profileId], references: [id])
+}
+
+// ── Branch Asset Inventory ────────────────────────────────────────────────
+
+model BranchAsset {
+  id         String   @id @default(cuid())
+  branchId   String
+  assetType  String   // Router, Switch, UPS, Printer…
+  serial     String?
+  model      String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  branch     Branch   @relation(fields: [branchId], references: [id])
+}
+
+// ── Operational Records ───────────────────────────────────────────────────
+
+model PermissionRecord {
+  id           String   @id @default(cuid())
+  employeeId   String
+  branchId     String
+  date         DateTime
+  hours        Int
+  minutes      Int
+  decimalHours Float
+  note         String?
+  createdAt    DateTime @default(now())
+
+  employee     Employee @relation(fields: [employeeId], references: [id])
+  branch       Branch   @relation(fields: [branchId],   references: [id])
+}
+
+model AnnualLeaveRecord {
+  id          String   @id @default(cuid())
+  employeeId  String
+  branchId    String
+  date        DateTime
+  days        Float
+  note        String?
+  createdAt   DateTime @default(now())
+
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  branch      Branch   @relation(fields: [branchId],   references: [id])
+}
+
+model SickLeaveRecord {
+  id          String   @id @default(cuid())
+  employeeId  String
+  branchId    String
+  fromDate    DateTime
+  toDate      DateTime
+  days        Int
+  note        String?
+  createdAt   DateTime @default(now())
+
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  branch      Branch   @relation(fields: [branchId],   references: [id])
+}
+
+model WorkingDayOffRecord {
+  id          String   @id @default(cuid())
+  employeeId  String
+  branchId    String
+  date        DateTime
+  note        String?
+  createdAt   DateTime @default(now())
+
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  branch      Branch   @relation(fields: [branchId],   references: [id])
+}
+
+model InsteadOfRecord {
+  id                  String   @id @default(cuid())
+  employeeId          String
+  replacedEmployeeId  String
+  branchId            String
+  date                DateTime
+  note                String?
+  createdAt           DateTime @default(now())
+
+  employee            Employee @relation("WorkingEmployee",  fields: [employeeId],         references: [id])
+  replacedEmployee    Employee @relation("ReplacedEmployee", fields: [replacedEmployeeId], references: [id])
+  branch              Branch   @relation(fields: [branchId], references: [id])
+}

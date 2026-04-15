@@ -1,0 +1,138 @@
+import { NavLink } from 'react-router-dom'
+import {
+  Clock, Calendar, HeartPulse, CalendarOff, Repeat2, Upload, Server, ArrowLeft,
+} from 'lucide-react'
+
+const ACTIVE_MODULES = [
+  {
+    path: '/permissions',
+    icon: Clock,
+    label: 'ساعات الإذن',
+    desc: 'إدارة وتتبع أذونات الموظفين الشهرية',
+    color: '#6B21A8',
+  },
+  {
+    path: '/annual-leave',
+    icon: Calendar,
+    label: 'الإجازة السنوية',
+    desc: 'إدارة أيام الإجازة السنوية · 21 يوم / سنة',
+    color: '#6B21A8',
+  },
+  {
+    path: '/branch-technical',
+    icon: Server,
+    label: 'البنية التقنية للفروع',
+    desc: 'بيانات الشبكة والأجهزة والبنية التحتية لكل فرع',
+    color: '#6B21A8',
+  },
+]
+
+const COMING_MODULES = [
+  { icon: HeartPulse,  label: 'الإجازة المرضية',  desc: 'تسجيل ومتابعة الإجازات المرضية' },
+  { icon: CalendarOff, label: 'العمل في الإجازة', desc: 'تسجيل أيام العمل خلال الإجازات' },
+  { icon: Repeat2,     label: 'بدلاً من',         desc: 'إدارة أيام العمل البديلة' },
+  { icon: Upload,      label: 'مركز الرفع',       desc: 'رفع الملفات والتقارير' },
+]
+
+export default function OverviewPage() {
+  const month = new Date().toLocaleString('ar-EG', { month: 'long', year: 'numeric' })
+
+  return (
+    <div style={{ direction: 'rtl' }}>
+      {/* Page header */}
+      <div className="mb-7">
+        <h1 className="text-2xl font-black text-primary leading-tight">نظرة عامة</h1>
+        <p className="text-sm text-secondary mt-1">
+          مرحباً — نظام WE للدعم الفني · {month}
+        </p>
+      </div>
+
+      {/* Active modules */}
+      <section className="mb-8">
+        <h2 className="text-xs font-bold text-tertiary uppercase tracking-widest mb-3">
+          الوحدات المتاحة
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {ACTIVE_MODULES.map(mod => {
+            const Icon = mod.icon
+            return (
+              <NavLink key={mod.path} to={mod.path} className="group block">
+                <div
+                  className="card p-5 transition-all duration-150 group-hover:shadow-md group-hover:-translate-y-0.5"
+                  style={{ borderRight: `4px solid ${mod.color}` }}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div
+                      className="w-11 h-11 rounded-2xl flex items-center justify-center"
+                      style={{ background: `${mod.color}16` }}
+                    >
+                      <Icon size={22} style={{ color: mod.color }} strokeWidth={1.8} />
+                    </div>
+                    <ArrowLeft
+                      size={16}
+                      className="text-tertiary group-hover:text-primary transition-colors mt-1"
+                    />
+                  </div>
+                  <p className="font-bold text-primary text-sm mb-0.5">{mod.label}</p>
+                  <p className="text-xs text-secondary leading-relaxed">{mod.desc}</p>
+                </div>
+              </NavLink>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* Coming soon modules */}
+      <section className="mb-8">
+        <h2 className="text-xs font-bold text-tertiary uppercase tracking-widest mb-3">
+          قريباً
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {COMING_MODULES.map(mod => {
+            const Icon = mod.icon
+            return (
+              <div
+                key={mod.label}
+                className="card p-5 opacity-55 cursor-not-allowed"
+                style={{ borderRight: '4px solid var(--border-strong)' }}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="w-11 h-11 rounded-2xl flex items-center justify-center bg-elevated">
+                    <Icon size={22} className="text-tertiary" strokeWidth={1.6} />
+                  </div>
+                  <span
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}
+                  >
+                    قريباً
+                  </span>
+                </div>
+                <p className="font-bold text-primary text-sm mb-0.5">{mod.label}</p>
+                <p className="text-xs text-secondary leading-relaxed">{mod.desc}</p>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+
+      {/* System info footer card */}
+      <div
+        className="card p-5 flex items-center gap-4"
+        style={{ borderRight: '4px solid var(--we, #0066FF)' }}
+      >
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm flex-shrink-0"
+          style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}
+        >
+          WE
+        </div>
+        <div>
+          <p className="text-sm font-bold text-primary">WE Technical Support Dashboard</p>
+          <p className="text-xs text-secondary mt-0.5">
+            نظام متكامل لإدارة شؤون الموارد البشرية · الإصدار الأول
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
