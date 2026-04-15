@@ -8,25 +8,26 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { clsx } from 'clsx'
-import { useAuth } from '@/context/AuthContext'
+import { useAuth }     from '@/context/AuthContext'
+import { useLanguage } from '@/context/LanguageContext'
 
 // ── Nav structure ─────────────────────────────────────────────────────────
 
 const MAIN_NAV = [
-  { path: '/overview',         icon: LayoutDashboard, label: 'نظرة عامة'           },
-  { path: '/schedule',         icon: CalendarDays,    label: 'الجدول'              },
-  { path: '/permissions',      icon: Clock,           label: 'ساعات الإذن'        },
-  { path: '/annual-leave',     icon: Calendar,        label: 'الإجازة السنوية'    },
-  { path: '/sick-leave',       icon: HeartPulse,      label: 'الإجازة المرضية'    },
-  { path: '/instead-of',       icon: Repeat2,         label: 'بدلاً من'           },
-  { path: '/branch-technical', icon: Server,          label: 'البنية التقنية'     },
-  { path: '/employees',        icon: Users,           label: 'الموظفون'           },
-  { path: '/branches',         icon: GitBranch,       label: 'الفروع والتكليفات'  },
+  { path: '/overview',         icon: LayoutDashboard, labelAr: 'نظرة عامة',          labelEn: 'Overview'               },
+  { path: '/schedule',         icon: CalendarDays,    labelAr: 'الجدول',             labelEn: 'Schedule'               },
+  { path: '/permissions',      icon: Clock,           labelAr: 'ساعات الإذن',        labelEn: 'Permission Hours'       },
+  { path: '/annual-leave',     icon: Calendar,        labelAr: 'الإجازة السنوية',    labelEn: 'Annual Leave'           },
+  { path: '/sick-leave',       icon: HeartPulse,      labelAr: 'الإجازة المرضية',    labelEn: 'Sick Leave'             },
+  { path: '/instead-of',       icon: Repeat2,         labelAr: 'بدلاً من',           labelEn: 'Instead Of'             },
+  { path: '/branch-technical', icon: Server,          labelAr: 'البنية التقنية',     labelEn: 'Technical Infra'        },
+  { path: '/employees',        icon: Users,           labelAr: 'الموظفون',           labelEn: 'Employees'              },
+  { path: '/branches',         icon: GitBranch,       labelAr: 'الفروع والتكليفات',  labelEn: 'Branches & Assignments' },
 ]
 
 const SOON_NAV = [
-  { path: '/day-off', icon: CalendarOff, label: 'العمل في الإجازة' },
-  { path: '/upload',  icon: Upload,      label: 'مركز الرفع'       },
+  { path: '/day-off', icon: CalendarOff, labelAr: 'العمل في الإجازة', labelEn: 'Working on Day Off' },
+  { path: '/upload',  icon: Upload,      labelAr: 'مركز الرفع',       labelEn: 'Upload Center'      },
 ]
 
 // ── Logo ring ─────────────────────────────────────────────────────────────
@@ -54,10 +55,12 @@ function LogoRing({ size = 46 }: { size?: number }) {
 // ── Active nav link ───────────────────────────────────────────────────────
 
 function ActiveLink({
-  path, icon: Icon, label, collapsed, onClick,
+  path, icon: Icon, labelAr, labelEn, collapsed, onClick,
 }: {
-  path: string; icon: LucideIcon; label: string; collapsed: boolean; onClick?: () => void
+  path: string; icon: LucideIcon; labelAr: string; labelEn: string; collapsed: boolean; onClick?: () => void
 }) {
+  const { lang } = useLanguage()
+  const label = lang === 'en' ? labelEn : labelAr
   return (
     <NavLink
       to={path}
@@ -94,14 +97,16 @@ function ActiveLink({
 
 // ── Disabled "coming soon" item ───────────────────────────────────────────
 
-function SoonItem({ icon: Icon, label, collapsed }: { icon: LucideIcon; label: string; collapsed: boolean }) {
+function SoonItem({ icon: Icon, labelAr, labelEn, collapsed }: { icon: LucideIcon; labelAr: string; labelEn: string; collapsed: boolean }) {
+  const { lang, t } = useLanguage()
+  const label = lang === 'en' ? labelEn : labelAr
   return (
     <div
       className={clsx(
         'flex items-center gap-3 rounded-xl px-3 py-2.5 select-none opacity-40',
         collapsed && 'justify-center px-2',
       )}
-      title={collapsed ? `${label} — قريباً` : undefined}
+      title={collapsed ? `${label} — ${t('nav.soon')}` : undefined}
     >
       <Icon size={17} strokeWidth={1.6} color="rgba(255,255,255,0.7)" />
       {!collapsed && (
@@ -113,7 +118,7 @@ function SoonItem({ icon: Icon, label, collapsed }: { icon: LucideIcon; label: s
             className="text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
             style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.45)' }}
           >
-            قريباً
+            {t('nav.soon')}
           </span>
         </div>
       )}
@@ -145,6 +150,7 @@ function SidebarContent({
   onClose?: () => void
 }) {
   const { session, logout } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
 
   const name    = session?.name ?? ''
@@ -187,14 +193,14 @@ function SidebarContent({
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-        <SectionLabel label="الرئيسية" show={!collapsed} />
+        <SectionLabel label={t('nav.main')} show={!collapsed} />
         {MAIN_NAV.map(item => (
           <ActiveLink key={item.path} {...item} collapsed={collapsed} onClick={onClose} />
         ))}
 
         {collapsed
           ? <div className="my-2 border-t" style={{ borderColor: 'rgba(255,255,255,0.07)' }} />
-          : <SectionLabel label="قريباً" show />
+          : <SectionLabel label={t('nav.soon')} show />
         }
         {SOON_NAV.map(item => (
           <SoonItem key={item.path} {...item} collapsed={collapsed} />
@@ -225,7 +231,7 @@ function SidebarContent({
             onClick={handleLogout}
             className="p-1.5 rounded-lg transition-colors hover:bg-white/8 flex-shrink-0"
             style={{ color: 'rgba(255,255,255,0.3)' }}
-            title="تسجيل الخروج"
+            title={t('btn.logout')}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#FCA5A5' }}
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.3)' }}
           >
@@ -241,6 +247,7 @@ function SidebarContent({
 
 export function DesktopSidebar() {
   const [collapsed, setCollapsed] = useState(false)
+  const { t } = useLanguage()
 
   return (
     <aside
@@ -264,11 +271,11 @@ export function DesktopSidebar() {
             collapsed && 'justify-center',
           )}
           style={{ color: 'rgba(255,255,255,0.35)' }}
-          title={collapsed ? 'توسيع' : 'طي'}
+          title={collapsed ? t('btn.expand') : t('btn.collapse')}
         >
           {collapsed
             ? <ChevronRight size={15} />
-            : <><ChevronLeft size={15} /><span>طي القائمة</span></>
+            : <><ChevronLeft size={15} /><span>{t('btn.collapse')}</span></>
           }
         </button>
       </div>

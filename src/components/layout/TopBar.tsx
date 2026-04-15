@@ -1,11 +1,12 @@
 import { Menu, Sun, Moon, Calendar, LogOut } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useTheme } from '@/context/ThemeContext'
-import { useAuth }  from '@/context/AuthContext'
+import { useTheme }    from '@/context/ThemeContext'
+import { useAuth }     from '@/context/AuthContext'
+import { useLanguage } from '@/context/LanguageContext'
 
 // ── Page titles ───────────────────────────────────────────────────────────
 
-const TITLES: Record<string, string> = {
+const TITLES_AR: Record<string, string> = {
   '/overview':         'نظرة عامة',
   '/schedule':         'الجدول',
   '/permissions':      'ساعات الإذن',
@@ -14,9 +15,23 @@ const TITLES: Record<string, string> = {
   '/instead-of':       'بدلاً من',
   '/branch-technical': 'البنية التقنية للفروع',
   '/employees':        'إدارة الموظفين',
-  '/branches':         'إدارة الفروع والتكليفات',
+  '/branches':         'الفروع والتكليفات',
   '/day-off':          'العمل في الإجازة',
   '/upload':           'مركز الرفع',
+}
+
+const TITLES_EN: Record<string, string> = {
+  '/overview':         'Overview',
+  '/schedule':         'Schedule',
+  '/permissions':      'Permission Hours',
+  '/annual-leave':     'Annual Leave',
+  '/sick-leave':       'Sick Leave',
+  '/instead-of':       'Instead Of',
+  '/branch-technical': 'Branch Technical Infrastructure',
+  '/employees':        'Employee Management',
+  '/branches':         'Branches & Assignments',
+  '/day-off':          'Working on Day Off',
+  '/upload':           'Upload Center',
 }
 
 // ── Role label (Arabic) ───────────────────────────────────────────────────
@@ -26,6 +41,11 @@ const ROLE_AR: Record<string, string> = {
   Supervisor: 'مشرف الدعم الفني',
   Admin:      'مدير النظام',
 }
+const ROLE_EN: Record<string, string> = {
+  Senior:     'Technical Support Senior',
+  Supervisor: 'Technical Support Supervisor',
+  Admin:      'System Admin',
+}
 
 function arabicMonth() {
   return new Date().toLocaleString('ar-EG', { month: 'long', year: 'numeric' })
@@ -34,14 +54,19 @@ function arabicMonth() {
 // ── TopBar ────────────────────────────────────────────────────────────────
 
 export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
-  const { pathname }        = useLocation()
-  const navigate            = useNavigate()
+  const { pathname }           = useLocation()
+  const navigate               = useNavigate()
   const { theme, toggleTheme } = useTheme()
-  const { session, logout } = useAuth()
+  const { session, logout }    = useAuth()
+  const { lang, toggleLang, dir } = useLanguage()
+
+  const isAr    = lang === 'ar'
+  const TITLES  = isAr ? TITLES_AR : TITLES_EN
+  const ROLE_LB = isAr ? ROLE_AR   : ROLE_EN
 
   const title   = TITLES[pathname] ?? 'WE Support'
   const name    = session?.name    ?? ''
-  const roleAr  = ROLE_AR[session?.role ?? ''] ?? ''
+  const roleStr = ROLE_LB[session?.role ?? ''] ?? ''
   const initial = name.trim().charAt(0).toUpperCase()
 
   function handleLogout() {
@@ -55,7 +80,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
       style={{
         background: 'var(--bg-surface)',
         borderBottom: '1px solid var(--border)',
-        direction: 'rtl',
+        direction: dir,
       }}
     >
       {/* Mobile hamburger */}
@@ -81,11 +106,23 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
         <span>{arabicMonth()}</span>
       </div>
 
+      {/* Language toggle */}
+      <button
+        onClick={toggleLang}
+        className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-black transition-colors hover:bg-elevated"
+        style={{ color: 'var(--text-secondary)', letterSpacing: '0.03em' }}
+        title={isAr ? 'Switch to English' : 'التبديل للعربية'}
+      >
+        <span style={{ color: isAr ? 'var(--text-tertiary)' : '#6B21A8' }}>EN</span>
+        <span className="mx-0.5 text-tertiary">|</span>
+        <span style={{ color: isAr ? '#6B21A8' : 'var(--text-tertiary)' }}>ع</span>
+      </button>
+
       {/* Theme toggle */}
       <button
         onClick={toggleTheme}
         className="p-2 rounded-lg text-secondary hover:text-primary hover:bg-elevated transition-colors"
-        title={theme === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'}
+        title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
       >
         {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
       </button>
@@ -97,7 +134,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
       <div className="flex items-center gap-2.5">
         <div className="hidden sm:block text-right leading-tight">
           <p className="text-xs font-bold text-primary">{name}</p>
-          {roleAr && <p className="text-[10px] text-tertiary">{roleAr}</p>}
+          {roleStr && <p className="text-[10px] text-tertiary">{roleStr}</p>}
         </div>
 
         {/* Avatar */}

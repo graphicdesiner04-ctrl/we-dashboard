@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { Employee, Branch, PermissionRecord, EmployeeSummary, PermissionsKPI } from '@/types/hr'
 import { MONTHLY_LIMIT_HOURS } from '@/types/hr'
-import { EMPLOYEES, BRANCHES } from '@/data/seedData'
+import { EMPLOYEES, BRANCHES, PERMISSION_INITIAL } from '@/data/seedData'
 import { getCurrentBranchId } from '@/hooks/useAssignments'
 import { storage } from '@/lib/storage'
 
@@ -35,7 +35,7 @@ export function usePermissions() {
   )
 
   const [records, setRecords] = useState<PermissionRecord[]>(() =>
-    storage.get<PermissionRecord[]>('records', []),
+    storage.get<PermissionRecord[]>('records', PERMISSION_INITIAL),
   )
 
   useEffect(() => { storage.set('records', records) }, [records])

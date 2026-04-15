@@ -6,6 +6,7 @@ import { storage } from '@/lib/storage'
 export type BranchInput = {
   ou: string
   storeName: string
+  storeNameAr?: string
   ext1: string
   ext2: string
   ext3: string

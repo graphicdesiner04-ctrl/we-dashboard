@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { Employee, Branch, SickLeaveRecord } from '@/types/hr'
-import { EMPLOYEES, BRANCHES } from '@/data/seedData'
+import { EMPLOYEES, BRANCHES, SICK_LEAVE_INITIAL } from '@/data/seedData'
 import { getCurrentBranchId } from '@/hooks/useAssignments'
 import { storage } from '@/lib/storage'
 
@@ -47,7 +47,7 @@ export function useSickLeave() {
   )
 
   const [records, setRecords] = useState<SickLeaveRecord[]>(
-    () => storage.get<SickLeaveRecord[]>('sl-records', []),
+    () => storage.get<SickLeaveRecord[]>('sl-records', SICK_LEAVE_INITIAL),
   )
 
   useEffect(() => { storage.set('sl-records', records) }, [records])

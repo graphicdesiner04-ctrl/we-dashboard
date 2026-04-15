@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { Employee, Branch, InsteadOfRecord } from '@/types/hr'
-import { EMPLOYEES, BRANCHES } from '@/data/seedData'
+import { EMPLOYEES, BRANCHES, INSTEAD_OF_INITIAL } from '@/data/seedData'
 import { getCurrentBranchId } from '@/hooks/useAssignments'
 import { storage } from '@/lib/storage'
 
@@ -9,11 +9,11 @@ function uid() {
 }
 
 export type InsteadOfInput = {
-  employeeId:         string   // من اشتغل
-  replacedEmployeeId: string   // اللي اتبدّل
-  branchId:           string
-  date:               string   // YYYY-MM-DD
-  note:               string
+  employeeId:          string          // من اشتغل
+  replacedEmployeeId?: string          // اللي اتبدّل (optional)
+  branchId:            string
+  date:                string          // YYYY-MM-DD
+  note:                string
 }
 
 export interface InsteadOfSummary {
@@ -38,7 +38,7 @@ export function useInsteadOf() {
   )
 
   const [records, setRecords] = useState<InsteadOfRecord[]>(
-    () => storage.get<InsteadOfRecord[]>('io-records', []),
+    () => storage.get<InsteadOfRecord[]>('io-records', INSTEAD_OF_INITIAL),
   )
 
   useEffect(() => { storage.set('io-records', records) }, [records])

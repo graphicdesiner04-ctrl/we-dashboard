@@ -23,8 +23,9 @@ export interface Employee {
 // ── Branch (CSO sheet) ───────────────────────────────────────────────────
 export interface Branch {
   id: string
-  ou: string            // Organizational Unit identifier
-  storeName: string     // display name of the store/branch
+  ou: string            // Organizational Unit code (e.g. wS09Bi010921)
+  storeName: string     // English display name
+  storeNameAr?: string  // Arabic display name
   ext1: string
   ext2: string
   ext3: string
@@ -153,8 +154,8 @@ export interface WorkingDayOffRecord {
 // ── Instead Of (replacement) ──────────────────────────────────────────────
 export interface InsteadOfRecord {
   id: string
-  employeeId: string          // employee who worked instead
-  replacedEmployeeId: string  // employee who was replaced
+  employeeId: string           // employee who worked instead
+  replacedEmployeeId?: string  // employee who was replaced (optional)
   branchId: string
   date: string                // YYYY-MM-DD
   note: string

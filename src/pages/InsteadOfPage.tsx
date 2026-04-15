@@ -190,7 +190,7 @@ function InsteadOfTable({
       <div className="block md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
         {records.map(rec => {
           const worker   = empMap[rec.employeeId]
-          const replaced = empMap[rec.replacedEmployeeId]
+          const replaced = rec.replacedEmployeeId ? empMap[rec.replacedEmployeeId] : undefined
           const branch   = branchMap[rec.branchId]
           return (
             <div key={rec.id} className="p-4">
@@ -234,7 +234,7 @@ function InsteadOfTable({
           <tbody>
             {records.map(rec => {
               const worker   = empMap[rec.employeeId]
-              const replaced = empMap[rec.replacedEmployeeId]
+              const replaced = rec.replacedEmployeeId ? empMap[rec.replacedEmployeeId] : undefined
               const branch   = branchMap[rec.branchId]
               return (
                 <tr key={rec.id}>
