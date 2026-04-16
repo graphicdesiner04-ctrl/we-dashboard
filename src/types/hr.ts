@@ -151,13 +151,15 @@ export interface WorkingDayOffRecord {
   createdAt: string
 }
 
-// ── Instead Of (replacement) ──────────────────────────────────────────────
+// ── Instead Of (worked on holiday / day off) ──────────────────────────────
+// Employee works on their scheduled day off / holiday.
+// Days accumulate → they earn compensatory days back ("Replace with day").
 export interface InsteadOfRecord {
   id: string
-  employeeId: string           // employee who worked instead
-  replacedEmployeeId?: string  // employee who was replaced (optional)
-  branchId: string
-  date: string                // YYYY-MM-DD
+  employeeId: string
+  branchId?: string            // where they worked (optional — not always recorded)
+  date: string                 // YYYY-MM-DD (the holiday / day off they worked)
+  compensatoryDate?: string    // YYYY-MM-DD (the compensatory day given back)
   note: string
   createdAt: string
 }

@@ -9,24 +9,26 @@ function uid() {
 }
 
 export type InsteadOfInput = {
-  employeeId:          string          // من اشتغل
-  replacedEmployeeId?: string          // اللي اتبدّل (optional)
-  branchId:            string
-  date:                string          // YYYY-MM-DD
-  note:                string
+  employeeId:        string          // الموظف الذي اشتغل في يوم إجازته
+  branchId?:         string          // الفرع (اختياري)
+  date:              string          // YYYY-MM-DD — اليوم الذي اشتغل فيه
+  compensatoryDate?: string          // YYYY-MM-DD — يوم البدل الذي أُعطي له
+  note:              string
 }
 
 export interface InsteadOfSummary {
-  employee:        Employee
-  currentBranchId: string | null
-  workedCount:     number   // times this employee worked INSTEAD of someone
-  replacedCount:   number   // times this employee WAS replaced
+  employee:          Employee
+  currentBranchId:   string | null
+  workedCount:       number          // أيام اشتغلها في وقت إجازته
+  compensatoryGiven: number          // أيام بدل أُعطيت له
+  remainingOwed:     number          // أيام لم تُعطَ بعد
 }
 
 export interface InsteadOfKPI {
-  totalRecords:     number
-  uniqueWorkers:    number
-  uniqueReplaced:   number
+  totalRecords:   number
+  uniqueWorkers:  number
+  totalOwed:      number   // مجموع الأيام المستحقة لم تُعطَ بعد
+  totalGiven:     number   // مجموع أيام البدل التي أُعطيت
 }
 
 export function useInsteadOf() {
@@ -64,19 +66,26 @@ export function useInsteadOf() {
   )
 
   const summaries = useMemo((): InsteadOfSummary[] =>
-    employees.map(emp => ({
-      employee:        emp,
-      currentBranchId: getCurrentBranchId(emp.id),
-      workedCount:     currentYearRecords.filter(r => r.employeeId === emp.id).length,
-      replacedCount:   currentYearRecords.filter(r => r.replacedEmployeeId === emp.id).length,
-    })),
+    employees.map(emp => {
+      const empRecs          = currentYearRecords.filter(r => r.employeeId === emp.id)
+      const workedCount      = empRecs.length
+      const compensatoryGiven = empRecs.filter(r => !!r.compensatoryDate).length
+      return {
+        employee:          emp,
+        currentBranchId:   getCurrentBranchId(emp.id),
+        workedCount,
+        compensatoryGiven,
+        remainingOwed:     workedCount - compensatoryGiven,
+      }
+    }),
     [employees, currentYearRecords],
   )
 
   const kpi = useMemo((): InsteadOfKPI => ({
-    totalRecords:   currentYearRecords.length,
-    uniqueWorkers:  new Set(currentYearRecords.map(r => r.employeeId)).size,
-    uniqueReplaced: new Set(currentYearRecords.map(r => r.replacedEmployeeId)).size,
+    totalRecords:  currentYearRecords.length,
+    uniqueWorkers: new Set(currentYearRecords.map(r => r.employeeId)).size,
+    totalGiven:    currentYearRecords.filter(r => !!r.compensatoryDate).length,
+    totalOwed:     currentYearRecords.filter(r => !r.compensatoryDate).length,
   }), [currentYearRecords])
 
   return {

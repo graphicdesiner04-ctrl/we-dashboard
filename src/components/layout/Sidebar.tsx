@@ -20,14 +20,14 @@ const MAIN_NAV = [
   { path: '/annual-leave',     icon: Calendar,        labelAr: 'الإجازة السنوية',    labelEn: 'Annual Leave'           },
   { path: '/sick-leave',       icon: HeartPulse,      labelAr: 'الإجازة المرضية',    labelEn: 'Sick Leave'             },
   { path: '/instead-of',       icon: Repeat2,         labelAr: 'بدلاً من',           labelEn: 'Instead Of'             },
+  { path: '/day-off',          icon: CalendarOff,     labelAr: 'العمل في الإجازة',   labelEn: 'Working on Day Off'     },
   { path: '/branch-technical', icon: Server,          labelAr: 'البنية التقنية',     labelEn: 'Technical Infra'        },
   { path: '/employees',        icon: Users,           labelAr: 'الموظفون',           labelEn: 'Employees'              },
   { path: '/branches',         icon: GitBranch,       labelAr: 'الفروع والتكليفات',  labelEn: 'Branches & Assignments' },
 ]
 
 const SOON_NAV = [
-  { path: '/day-off', icon: CalendarOff, labelAr: 'العمل في الإجازة', labelEn: 'Working on Day Off' },
-  { path: '/upload',  icon: Upload,      labelAr: 'مركز الرفع',       labelEn: 'Upload Center'      },
+  { path: '/upload', icon: Upload, labelAr: 'مركز الرفع', labelEn: 'Upload Center' },
 ]
 
 // ── Logo ring ─────────────────────────────────────────────────────────────

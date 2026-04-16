@@ -10,6 +10,7 @@ import EmployeesPage       from '@/pages/EmployeesPage'
 import BranchesPage        from '@/pages/BranchesPage'
 import SickLeavePage       from '@/pages/SickLeavePage'
 import InsteadOfPage       from '@/pages/InsteadOfPage'
+import WorkingDayOffPage   from '@/pages/WorkingDayOffPage'
 import SchedulePage        from '@/pages/SchedulePage'
 
 // ── Protected layout wrapper ──────────────────────────────────────────────
@@ -41,8 +42,8 @@ export default function App() {
         <Route path="/branches"         element={<BranchesPage />} />
         <Route path="/sick-leave"       element={<SickLeavePage />} />
         <Route path="/instead-of"       element={<InsteadOfPage />} />
+        <Route path="/day-off"          element={<WorkingDayOffPage />} />
         <Route path="/schedule"         element={<SchedulePage />} />
-        {/* Future: /day-off, /upload */}
       </Route>
 
       {/* Fallback */}

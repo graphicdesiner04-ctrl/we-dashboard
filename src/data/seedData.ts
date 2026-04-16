@@ -487,75 +487,26 @@ export const SICK_LEAVE_INITIAL: SickLeaveRecord[] = [
 ]
 
 // ── Instead Of Initial Records ────────────────────────────────────────────
-// SOURCE: instead of sheet — 29 individual records expanded from multi-date rows
-// Note: replacedEmployeeId not available in sheet; branchId defaulted to br-01
+// SOURCE: "instead of" sheet — employees who worked on their day off / holiday.
+// Only records where the sheet has a confirmed date are included.
+// Employees with count > 0 but no date: dates not yet recorded in sheet.
+// "Replace with day" column is empty in sheet → compensatoryDate not set.
 
 export const INSTEAD_OF_INITIAL: InsteadOfRecord[] = [
-  // emp-33 — Mahmoud Mohamed Ismail Arafat (239015): 1 day
-  { id: 'io-seed-001', employeeId: 'emp-33', branchId: 'br-01', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' },
+  // 23-Mar-2026 group (worked on holiday)
+  { id: 'io-seed-001', employeeId: 'emp-33', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' }, // Mahmoud Mohamed Ismail Arafat (239015)
+  { id: 'io-seed-002', employeeId: 'emp-25', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' }, // Abdelrahman Mohamed Ibrahem (277026)
+  { id: 'io-seed-003', employeeId: 'emp-21', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' }, // Mohamed Rabeaa Abd-El Aziz Hussien (236311)
 
-  // emp-12 — Romany Eissa Fawzy Shafik (8287): 3 days
-  { id: 'io-seed-002', employeeId: 'emp-12', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
-  { id: 'io-seed-003', employeeId: 'emp-12', branchId: 'br-01', date: '2026-03-22', note: '', createdAt: '2026-03-22T00:00:00.000Z' },
-  { id: 'io-seed-004', employeeId: 'emp-12', branchId: 'br-01', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' },
-
-  // emp-40 — Mohamed Abd-El Mohsen (163825): 2 days
-  { id: 'io-seed-005', employeeId: 'emp-40', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
-  { id: 'io-seed-006', employeeId: 'emp-40', branchId: 'br-01', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' },
-
-  // emp-30 — Ahmed Zarief (9070): 2 days
-  { id: 'io-seed-007', employeeId: 'emp-30', branchId: 'br-01', date: '2026-03-22', note: '', createdAt: '2026-03-22T00:00:00.000Z' },
-  { id: 'io-seed-008', employeeId: 'emp-30', branchId: 'br-01', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' },
-
-  // emp-34 — Mohamed Yosry Hani (7849): 2 days
-  { id: 'io-seed-009', employeeId: 'emp-34', branchId: 'br-01', date: '2026-03-22', note: '', createdAt: '2026-03-22T00:00:00.000Z' },
-  { id: 'io-seed-010', employeeId: 'emp-34', branchId: 'br-01', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' },
-
-  // emp-31 — Ahmed Mohamed Hassan Ismael (9071): 2 days
-  { id: 'io-seed-011', employeeId: 'emp-31', branchId: 'br-01', date: '2026-03-22', note: '', createdAt: '2026-03-22T00:00:00.000Z' },
-  { id: 'io-seed-012', employeeId: 'emp-31', branchId: 'br-01', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' },
-
-  // emp-25 — Abdelrahman Mohamed Ibrahem (277026): 1 day
-  { id: 'io-seed-013', employeeId: 'emp-25', branchId: 'br-01', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' },
-
-  // emp-21 — Mohamed Rabeaa Abd-El Aziz Hussien (236311): 1 day
-  { id: 'io-seed-014', employeeId: 'emp-21', branchId: 'br-01', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' },
-
-  // emp-39 — Mohamed Ahmed Hassan Mohamed (355561): 2 days
-  { id: 'io-seed-015', employeeId: 'emp-39', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
-  { id: 'io-seed-016', employeeId: 'emp-39', branchId: 'br-01', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' },
-
-  // emp-22 — Mohamed Gabir Amin (121369): 2 days
-  { id: 'io-seed-017', employeeId: 'emp-22', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
-  { id: 'io-seed-018', employeeId: 'emp-22', branchId: 'br-01', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' },
-
-  // emp-26 — Ahmed Salah Mohamed Aly (214059): 2 days
-  { id: 'io-seed-019', employeeId: 'emp-26', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
-  { id: 'io-seed-020', employeeId: 'emp-26', branchId: 'br-01', date: '2026-03-23', note: '', createdAt: '2026-03-23T00:00:00.000Z' },
-
-  // emp-41 — Mohamed Nasser Mohamed Shehata (295879): 1 day
-  { id: 'io-seed-021', employeeId: 'emp-41', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
-
-  // emp-20 — Mahmoud Hamdy Abdelwahab (7703): 1 day
-  { id: 'io-seed-022', employeeId: 'emp-20', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
-
-  // emp-27 — Ahmed Mahmoud Ahmed Mohamed (165419): 1 day
-  { id: 'io-seed-023', employeeId: 'emp-27', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
-
-  // emp-19 — Assem Mohamed Gamal (7702): 1 day
-  { id: 'io-seed-024', employeeId: 'emp-19', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
-
-  // emp-23 — Fady Atta Kamal Tawfik (8474): 1 day
-  { id: 'io-seed-025', employeeId: 'emp-23', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
-
-  // emp-24 — Mahmoud Gamal Heshmat (216859): 1 day
-  { id: 'io-seed-026', employeeId: 'emp-24', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
-
-  // emp-36 — Mohamed Abd-El Azem Mohamed Tolba (8141): 1 day
-  { id: 'io-seed-027', employeeId: 'emp-36', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
-
-  // emp-38 — Ahmed Rawy Nassar Maged (251614): 1 day
-  { id: 'io-seed-028', employeeId: 'emp-38', branchId: 'br-01', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' },
+  // 19-Mar-2026 group (worked on holiday)
+  { id: 'io-seed-004', employeeId: 'emp-41', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' }, // Mohamed Nasser Mohamed Shehata (295879)
+  { id: 'io-seed-005', employeeId: 'emp-20', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' }, // Mahmoud Hamdy Abdelwahab (7703)
+  { id: 'io-seed-006', employeeId: 'emp-27', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' }, // Ahmed Mahmoud Ahmed Mohamed (165419)
+  { id: 'io-seed-007', employeeId: 'emp-19', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' }, // Assem Mohamed Gamal (7702)
+  { id: 'io-seed-008', employeeId: 'emp-23', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' }, // Fady Atta Kamal Tawfik (8474)
+  { id: 'io-seed-009', employeeId: 'emp-24', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' }, // Mahmoud Gamal Heshmat (216859)
+  { id: 'io-seed-010', employeeId: 'emp-36', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' }, // Mohamed Abd-El Azem Mohamed Tolba (8141)
+  { id: 'io-seed-011', employeeId: 'emp-38', date: '2026-03-19', note: '', createdAt: '2026-03-19T00:00:00.000Z' }, // Ahmed Rawy Nassar Maged (251614)
 ]
 
 // ── Working in Day Off Initial Records ────────────────────────────────────
