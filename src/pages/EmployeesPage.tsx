@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react'
 import { Users, Plus, Pencil, Trash2, X, Save, Search, ChevronDown } from 'lucide-react'
 import { useEmployees } from '@/hooks/useEmployees'
+import { useSchedule }  from '@/hooks/useSchedule'
+import { getAllEmployees } from '@/core/dataEngine'
 import { getEmpName }   from '@/data/seedData'
 import type { Employee, EmployeeRole } from '@/types/hr'
 import type { EmployeeInput } from '@/hooks/useEmployees'
@@ -190,7 +192,16 @@ function EmployeeModal({
 // ── Main Page ─────────────────────────────────────────────────────────────
 
 export default function EmployeesPage() {
-  const { employees, addEmployee, updateEmployee, deleteEmployee } = useEmployees()
+  // CRUD operations on profile registry
+  const { addEmployee, updateEmployee, deleteEmployee } = useEmployees()
+
+  // Reactive schedule entries — re-derive employees whenever schedule changes
+  const { entries } = useSchedule()
+
+  // employees = only those who appear in at least one schedule entry
+  // Source of truth = schedule, not static array
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const employees = useMemo(() => getAllEmployees(), [entries])
 
   const [modalOpen,   setModalOpen]   = useState(false)
   const [editTarget,  setEditTarget]  = useState<Employee | null>(null)
