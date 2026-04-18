@@ -39,7 +39,6 @@ const BRANCH_CELL: Record<string, { bg: string; fg: string; short: string }> = {
   'br-06': { bg: 'rgba(161,98,7,0.25)',    fg: '#fde047', short: 'منيا ج.' },
   'br-07': { bg: 'rgba(63,98,18,0.28)',    fg: '#bef264', short: 'بني أحمد'},
   'br-08': { bg: 'rgba(30,64,175,0.25)',   fg: '#93c5fd', short: 'صفط'     },
-  'br-09': { bg: 'rgba(5,150,105,0.25)',   fg: '#6ee7b7', short: 'بني مزار'},
 }
 
 type CellStyle = { bg: string; fg: string; label: string; sub?: string }
@@ -242,7 +241,6 @@ const BRANCH_ALIASES: Record<string, string> = {
   'elmeniael gidida': 'br-06', 'elmeniaelgidida': 'br-06',
   baniahmed: 'br-07', 'بني أحمد': 'br-07',
   saftelkhammar: 'br-08', 'صفط الخمار': 'br-08', saftelkhammar2: 'br-08',
-  banimazar: 'br-09', 'بني مزار': 'br-09',
 }
 function normBranchKey(s: string) { return s.toLowerCase().replace(/\s+/g, '') }
 function matchBranch(name: string) { return BRANCH_ALIASES[normBranchKey(name)] ?? BRANCH_ALIASES[name] ?? null }

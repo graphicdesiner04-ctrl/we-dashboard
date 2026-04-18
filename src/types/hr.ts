@@ -2,7 +2,7 @@
 // Entity model aligned with real Excel workbook structure.
 
 // ── Employee (Agent sheet) ────────────────────────────────────────────────
-export type EmployeeRole = 'Senior' | 'Agent'
+export type EmployeeRole = 'Senior' | 'Agent' | 'Supervisor'
 
 export interface Employee {
   id: string
