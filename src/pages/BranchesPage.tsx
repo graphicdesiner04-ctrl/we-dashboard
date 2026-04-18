@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react'
-import { GitBranch, Plus, Pencil, Trash2, X, Save, Search, Calendar, Users } from 'lucide-react'
+import { GitBranch, Plus, Pencil, Trash2, X, Save, Search, Calendar, Users, BarChart2 } from 'lucide-react'
 import { useBranches }    from '@/hooks/useBranches'
 import { useAssignments } from '@/hooks/useAssignments'
 import { useEmployees }   from '@/hooks/useEmployees'
-import { useDataEngine }  from '@/hooks/useDataEngine'
+import { useSchedule }    from '@/hooks/useSchedule'
+import { getAssignmentsByDate, getEmployeeDays } from '@/core/dataEngine'
 import { getEmpName }     from '@/data/seedData'
 import type { Branch, AssignmentHistory } from '@/types/hr'
 import type { BranchInput }     from '@/hooks/useBranches'
@@ -268,19 +269,23 @@ export default function BranchesPage() {
   const [branchSearch,    setBranchSearch]    = useState('')
   const [assignSearch,    setAssignSearch]    = useState('')
   const [assignBranchFlt, setAssignBranchFlt] = useState('')
-  const [activeTab,       setActiveTab]       = useState<'branches' | 'assignments' | 'today'>('branches')
+  const [activeTab,       setActiveTab]       = useState<'branches' | 'assignments' | 'today' | 'days'>('branches')
 
   const empMap    = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
   const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
 
-  // Today's assignments from schedule
-  const { todayAssignments, empMap: engineEmpMap, BRANCHES: engineBranches } = useDataEngine()
-  const todayBranchIds = useMemo(() =>
-    engineBranches.filter(b => todayAssignments[b.id]?.length > 0).map(b => b.id),
-  [engineBranches, todayAssignments])
+  // Schedule = single source of truth (reactive on entries)
+  const { entries } = useSchedule()
+  const today = new Date().toISOString().slice(0, 10)
+
+  // getAssignmentsByDate: branchId → Employee[] from schedule
+  const assignmentsByBranch = useMemo(() => getAssignmentsByDate(today), [entries, today])
   const todayTotal = useMemo(() =>
-    Object.values(todayAssignments).reduce((s, arr) => s + arr.length, 0),
-  [todayAssignments])
+    [...assignmentsByBranch.values()].reduce((s, arr) => s + arr.length, 0),
+  [assignmentsByBranch])
+
+  // getEmployeeDays: distinct working days per employee per branch
+  const employeeDays = useMemo(() => getEmployeeDays(), [entries])
 
   const filteredBranches = useMemo(() => {
     const q = branchSearch.toLowerCase()
@@ -367,30 +372,27 @@ export default function BranchesPage() {
       {/* Tabs */}
       <div className="flex items-center gap-1 mb-5 p-1 rounded-xl w-fit flex-wrap"
         style={{ background: 'var(--bg-elevated)' }}>
-        <button onClick={() => setActiveTab('branches')}
-          className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
-          style={activeTab === 'branches' ? { background: WE, color: '#fff' } : { color: 'var(--text-secondary)' }}>
-          الفروع ({branches.length})
-        </button>
-        <button onClick={() => setActiveTab('assignments')}
-          className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
-          style={activeTab === 'assignments' ? { background: WE, color: '#fff' } : { color: 'var(--text-secondary)' }}>
-          التكليفات ({assignments.length})
-        </button>
-        <button onClick={() => setActiveTab('today')}
-          className="px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-1.5"
-          style={activeTab === 'today' ? { background: WE, color: '#fff' } : { color: 'var(--text-secondary)' }}>
-          <Users size={13} />
-          موظفو اليوم
-          {todayTotal > 0 && (
-            <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
-              style={activeTab === 'today'
-                ? { background: 'rgba(255,255,255,0.25)', color: '#fff' }
-                : { background: `${WE}20`, color: WE }}>
-              {todayTotal}
-            </span>
-          )}
-        </button>
+        {([
+          { key: 'branches',    label: `الفروع (${branches.length})`,     icon: null },
+          { key: 'assignments', label: `التكليفات (${assignments.length})`, icon: null },
+          { key: 'today',       label: 'موظفو اليوم',                     icon: <Users size={13} />,    badge: todayTotal },
+          { key: 'days',        label: 'تحليل الأيام',                    icon: <BarChart2 size={13} />, badge: employeeDays.length },
+        ] as const).map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+            className="px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-1.5"
+            style={activeTab === tab.key ? { background: WE, color: '#fff' } : { color: 'var(--text-secondary)' }}>
+            {tab.icon}
+            {tab.label}
+            {'badge' in tab && tab.badge > 0 && (
+              <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+                style={activeTab === tab.key
+                  ? { background: 'rgba(255,255,255,0.25)' }
+                  : { background: `${WE}20`, color: WE }}>
+                {tab.badge}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* ── BRANCHES TAB ── */}
@@ -631,20 +633,18 @@ export default function BranchesPage() {
         </>
       )}
 
-      {/* ── TODAY TAB ── */}
+      {/* ── TODAY TAB — getAssignmentsByDate(today) ── */}
       {activeTab === 'today' && (
         <>
           <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm"
             style={{ background: `${WE}10`, border: `1px solid ${WE}25` }}>
             <Users size={14} style={{ color: WE }} />
-            <span className="font-bold" style={{ color: WE }}>
-              موظفو اليوم من الجدول
-            </span>
+            <span className="font-bold" style={{ color: WE }}>موظفو اليوم من الجدول</span>
             <span className="text-xs text-secondary mr-2">
               — {new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
             </span>
             <span className="mr-auto text-xs font-black num" style={{ color: WE }}>
-              {todayTotal} موظف في {todayBranchIds.length} فرع
+              {todayTotal} موظف في {assignmentsByBranch.size} فرع
             </span>
           </div>
 
@@ -654,10 +654,10 @@ export default function BranchesPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {engineBranches.filter(b => (todayAssignments[b.id]?.length ?? 0) > 0).map(branch => {
-                const empIds = todayAssignments[branch.id] ?? []
+              {[...assignmentsByBranch.entries()].map(([branchId, emps]) => {
+                const br = branchMap[branchId]
                 return (
-                  <div key={branch.id} className="card overflow-hidden">
+                  <div key={branchId} className="card overflow-hidden">
                     <div className="px-4 py-3 flex items-center gap-2"
                       style={{ borderBottom: '1px solid var(--border)', background: `${WE}08` }}>
                       <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -665,20 +665,16 @@ export default function BranchesPage() {
                         <GitBranch size={12} style={{ color: WE }} />
                       </div>
                       <span className="font-bold text-sm text-primary flex-1 truncate">
-                        {branch.storeNameAr || branch.storeName}
+                        {br?.storeNameAr || br?.storeName || branchId}
                       </span>
                       <span className="text-xs font-black num px-2 py-0.5 rounded-full"
-                        style={{ background: `${WE}15`, color: WE }}>
-                        {empIds.length}
-                      </span>
+                        style={{ background: `${WE}15`, color: WE }}>{emps.length}</span>
                     </div>
                     <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-                      {empIds.map(eid => {
-                        const emp = engineEmpMap[eid]
-                        if (!emp) return null
+                      {emps.map(emp => {
                         const name = getEmpName(emp)
                         return (
-                          <div key={eid} className="px-4 py-2.5 flex items-center gap-2.5">
+                          <div key={emp.id} className="px-4 py-2.5 flex items-center gap-2.5">
                             <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-black flex-shrink-0"
                               style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
                               {name.charAt(0)}
@@ -694,6 +690,71 @@ export default function BranchesPage() {
                   </div>
                 )
               })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── DAYS TAB — getEmployeeDays() ── */}
+      {activeTab === 'days' && (
+        <>
+          <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm"
+            style={{ background: `${WE}10`, border: `1px solid ${WE}25` }}>
+            <BarChart2 size={14} style={{ color: WE }} />
+            <span className="font-bold" style={{ color: WE }}>تحليل الأيام</span>
+            <span className="text-xs text-secondary mr-2">— أيام عمل مميزة لكل موظف لكل فرع</span>
+            <span className="mr-auto text-xs font-black num" style={{ color: WE }}>
+              {employeeDays.length} سجل
+            </span>
+          </div>
+
+          {employeeDays.length === 0 ? (
+            <div className="card p-10 text-center text-tertiary text-sm">
+              لا توجد بيانات أيام عمل في الجدول
+            </div>
+          ) : (
+            <div className="card overflow-hidden">
+              <div className="hidden md:block table-scroll">
+                <table className="we-table w-full min-w-[500px]">
+                  <thead>
+                    <tr>
+                      <th className="text-right">#</th>
+                      <th className="text-right">الموظف</th>
+                      <th className="text-right">الفرع</th>
+                      <th className="text-right">أيام العمل</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employeeDays.map((row, idx) => (
+                      <tr key={`${row.employeeId}-${row.branchId}`}>
+                        <td><span className="text-tertiary text-xs num">{idx + 1}</span></td>
+                        <td><span className="font-semibold text-primary text-sm">{row.employeeName}</span></td>
+                        <td><span className="text-secondary text-sm">{row.branchName}</span></td>
+                        <td>
+                          <span className="text-xs font-black num px-2 py-0.5 rounded-full"
+                            style={{ background: `${WE}15`, color: WE }}>
+                            {row.days} يوم
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="block md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
+                {employeeDays.map(row => (
+                  <div key={`${row.employeeId}-${row.branchId}`} className="px-4 py-3 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-primary text-sm truncate">{row.employeeName}</p>
+                      <p className="text-xs text-tertiary">{row.branchName}</p>
+                    </div>
+                    <span className="text-xs font-black num px-2 py-0.5 rounded-full flex-shrink-0"
+                      style={{ background: `${WE}15`, color: WE }}>
+                      {row.days} يوم
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </>

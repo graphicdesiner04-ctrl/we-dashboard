@@ -3,7 +3,8 @@ import { Calendar, Search, Pencil, Trash2, ChevronDown, ChevronUp, HardDrive, Ro
 import AnnualLeaveKPICards from '@/components/hr/AnnualLeaveKPICards'
 import AnnualLeaveForm     from '@/components/hr/AnnualLeaveForm'
 import { useAnnualLeave }  from '@/hooks/useAnnualLeave'
-import { useDataEngine }   from '@/hooks/useDataEngine'
+import { useSchedule }     from '@/hooks/useSchedule'
+import { getLeaves }       from '@/core/dataEngine'
 import { getEmpName }      from '@/data/seedData'
 import { ANNUAL_LEAVE_DAYS } from '@/types/hr'
 import type { AnnualLeaveRecord, AnnualLeaveSummary, Branch } from '@/types/hr'
@@ -150,6 +151,65 @@ function EmployeeCard({
   )
 }
 
+// ── Schedule leave card (derived from schedule) ───────────────────────────
+
+function ScheduleLeaveCard({
+  employeeName, dates, total,
+}: {
+  employeeId: string; employeeName: string; dates: string[]; total: number
+}) {
+  const [open, setOpen] = useState(false)
+  const initial = employeeName.charAt(0) || '?'
+  const over    = total > ANNUAL_LEAVE_DAYS
+
+  return (
+    <div className="card overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full px-4 py-3 flex items-center gap-3 text-right hover:bg-white/[0.02] transition-colors"
+      >
+        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0"
+          style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
+          {initial}
+        </div>
+        <div className="flex-1 min-w-0 text-right">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="font-bold text-primary text-sm">{employeeName}</span>
+            {over && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                style={{ background: '#DC262615', color: '#DC2626' }}>تجاوز الحد</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <ProgressBar used={total} limit={ANNUAL_LEAVE_DAYS} />
+            <span className="text-xs font-black num flex-shrink-0"
+              style={{ color: over ? '#DC2626' : WE }}>
+              {total}/{ANNUAL_LEAVE_DAYS}d
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0 mr-1">
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+            style={{ background: `${WE}18`, color: WE }}>{total}</span>
+          {open ? <ChevronUp size={14} className="text-tertiary" /> : <ChevronDown size={14} className="text-tertiary" />}
+        </div>
+      </button>
+      {open && (
+        <div className="border-t divide-y" style={{ borderColor: 'var(--border)' }}>
+          {dates.map(d => (
+            <div key={d} className="px-4 py-2 flex items-center gap-3">
+              <CalendarDays size={12} style={{ color: WE }} className="flex-shrink-0" />
+              <span className="text-xs font-semibold text-primary num">{fmtDate(d)}</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full mr-auto"
+                style={{ background: `${WE}12`, color: WE }}>سنوي · جدول</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function AnnualLeavePage() {
@@ -158,9 +218,32 @@ export default function AnnualLeavePage() {
     summaries, kpi, addRecord, updateRecord, deleteRecord, resetRecords,
   } = useAnnualLeave()
 
-  // Schedule-sourced annual leaves
-  const { annualLeavesFromSchedule, empMap: engineEmpMap, branchMap: engineBranchMap } = useDataEngine()
-  const [scheduleTab, setScheduleTab] = useState(false)
+  // Schedule-sourced annual leaves (single source of truth)
+  const { entries } = useSchedule()
+  const scheduleLeaves = useMemo(() => getLeaves('annual'), [entries])
+
+  // Group schedule leaves by employee
+  const scheduleByEmployee = useMemo(() => {
+    const map = new Map<string, { name: string; dates: string[] }>()
+    for (const lv of scheduleLeaves) {
+      const existing = map.get(lv.employeeId) ?? { name: lv.employeeName, dates: [] }
+      if (!existing.dates.includes(lv.date)) existing.dates.push(lv.date)
+      map.set(lv.employeeId, existing)
+    }
+    return [...map.entries()]
+      .map(([id, v]) => ({ employeeId: id, employeeName: v.name, dates: v.dates.sort(), total: v.dates.length }))
+      .sort((a, b) => b.total - a.total)
+  }, [scheduleLeaves])
+
+  // Active tab: 'schedule' = from dataEngine | 'manual' = legacy manual records
+  const [activeTab, setActiveTab] = useState<'schedule' | 'manual'>('schedule')
+  const [scheduleSearch, setScheduleSearch] = useState('')
+
+  const filteredSchedule = useMemo(() => {
+    const q = scheduleSearch.trim().toLowerCase()
+    if (!q) return scheduleByEmployee
+    return scheduleByEmployee.filter(e => e.employeeName.toLowerCase().includes(q))
+  }, [scheduleByEmployee, scheduleSearch])
 
   const [editing, setEditing] = useState<AnnualLeaveRecord | null>(null)
   const [search,  setSearch]  = useState('')
@@ -212,7 +295,7 @@ export default function AnnualLeavePage() {
   return (
     <div style={{ direction: 'rtl' }}>
       {/* Page header */}
-      <div className="flex items-start justify-between gap-4 mb-6">
+      <div className="flex items-start justify-between gap-4 mb-5">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -230,135 +313,151 @@ export default function AnnualLeavePage() {
         </div>
       </div>
 
-      <AnnualLeaveKPICards kpi={kpi} />
+      {/* Tabs: schedule (primary) vs manual */}
+      <div className="flex items-center gap-1 mb-5 p-1 rounded-xl w-fit"
+        style={{ background: 'var(--bg-elevated)' }}>
+        <button onClick={() => setActiveTab('schedule')}
+          className="px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-1.5"
+          style={activeTab === 'schedule' ? { background: WE, color: '#fff' } : { color: 'var(--text-secondary)' }}>
+          <CalendarDays size={13} />
+          من الجدول
+          <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+            style={activeTab === 'schedule'
+              ? { background: 'rgba(255,255,255,0.25)' }
+              : { background: `${WE}20`, color: WE }}>
+            {scheduleLeaves.length}
+          </span>
+        </button>
+        <button onClick={() => setActiveTab('manual')}
+          className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
+          style={activeTab === 'manual' ? { background: WE, color: '#fff' } : { color: 'var(--text-secondary)' }}>
+          سجلات يدوية
+          <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full mr-1.5"
+            style={activeTab === 'manual'
+              ? { background: 'rgba(255,255,255,0.25)' }
+              : { background: `${WE}20`, color: WE }}>
+            {records.length}
+          </span>
+        </button>
+      </div>
 
-      {/* Schedule-sourced leaves banner */}
-      {annualLeavesFromSchedule.length > 0 && (
-        <div className="mb-5 card overflow-hidden">
-          <button
-            onClick={() => setScheduleTab(o => !o)}
-            className="w-full px-4 py-3 flex items-center gap-3 text-right hover:bg-white/[0.02] transition-colors"
-          >
-            <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: `${WE}15` }}>
-              <CalendarDays size={14} style={{ color: WE }} />
+      {/* ── SCHEDULE TAB (primary — getLeaves('annual') from dataEngine) ── */}
+      {activeTab === 'schedule' && (
+        <>
+          {/* KPI from schedule */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+            <div className="card p-4">
+              <p className="text-xs text-secondary mb-1">أيام إجازة في الجدول</p>
+              <p className="text-2xl font-black num" style={{ color: WE }}>{scheduleLeaves.length}</p>
+              <p className="text-xs text-tertiary mt-0.5">إجمالي أيام سنوي</p>
             </div>
-            <span className="flex-1 font-bold text-sm text-primary">
-              إجازات من الجدول
-            </span>
-            <span className="text-xs font-black num px-2 py-0.5 rounded-full mr-1"
-              style={{ background: `${WE}15`, color: WE }}>
-              {annualLeavesFromSchedule.length}
-            </span>
-            {scheduleTab
-              ? <ChevronUp size={14} className="text-tertiary" />
-              : <ChevronDown size={14} className="text-tertiary" />
-            }
-          </button>
-          {scheduleTab && (
-            <div className="border-t" style={{ borderColor: 'var(--border)' }}>
-              <p className="px-4 py-2 text-[11px] text-tertiary"
-                style={{ background: 'var(--bg-elevated)' }}>
-                هذه الإجازات مسجّلة في الجدول (cellType = annual) — للمراجعة فقط
+            <div className="card p-4">
+              <p className="text-xs text-secondary mb-1">موظفون أخذوا إجازة</p>
+              <p className="text-2xl font-black num" style={{ color: WE }}>{scheduleByEmployee.length}</p>
+              <p className="text-xs text-tertiary mt-0.5">من الجدول</p>
+            </div>
+            <div className="card p-4">
+              <p className="text-xs text-secondary mb-1">تجاوزوا الحد</p>
+              <p className="text-2xl font-black num" style={{ color: '#DC2626' }}>
+                {scheduleByEmployee.filter(e => e.total > ANNUAL_LEAVE_DAYS).length}
               </p>
-              <div className="divide-y max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
-                {annualLeavesFromSchedule.map((lv, idx) => {
-                  const emp = engineEmpMap[lv.employeeId]
-                  const br  = engineBranchMap[lv.branchId]
-                  return (
-                    <div key={idx} className="px-4 py-2.5 flex items-center gap-3">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-black flex-shrink-0"
-                        style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
-                        {emp ? getEmpName(emp).charAt(0) : '?'}
-                      </div>
-                      <span className="flex-1 text-xs font-semibold text-primary">
-                        {emp ? getEmpName(emp) : lv.employeeId}
-                      </span>
-                      <span className="text-xs text-secondary num">
-                        {fmtDate(lv.date)}
-                      </span>
-                      {br && (
-                        <span className="text-[10px] text-tertiary">
-                          {br.storeNameAr || br.storeName}
-                        </span>
-                      )}
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                        style={{ background: `${WE}15`, color: WE }}>
-                        سنوي
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
+              <p className="text-xs text-tertiary mt-0.5">أكثر من {ANNUAL_LEAVE_DAYS} يوم</p>
             </div>
-          )}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
-
-        {/* Left: form + utils */}
-        <div className="flex flex-col gap-4 lg:self-start lg:sticky lg:top-[72px]">
-          <AnnualLeaveForm
-            employees={employees} branches={branches} summaries={summaries}
-            editingRecord={editing} onSubmit={handleSubmit}
-            onCancelEdit={() => setEditing(null)} onEmployeeSelect={() => {}}
-          />
-
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs"
-            style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
-            <HardDrive size={12} style={{ color: WE, opacity: 0.7 }} />
-            <span>يتم الحفظ تلقائياً على هذا الجهاز</span>
+            <div className="card p-4">
+              <p className="text-xs text-secondary mb-1">متوسط الأيام</p>
+              <p className="text-2xl font-black num" style={{ color: WE }}>
+                {scheduleByEmployee.length
+                  ? (scheduleLeaves.length / scheduleByEmployee.length).toFixed(1)
+                  : '0'}
+              </p>
+              <p className="text-xs text-tertiary mt-0.5">يوم / موظف</p>
+            </div>
           </div>
 
-          <div className="card p-3 flex flex-col gap-2">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-tertiary mb-1">إعادة التعيين</p>
-            <button onClick={handleReset} disabled={records.length === 0}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors hover:bg-red-500/10 disabled:opacity-30 disabled:cursor-not-allowed"
-              style={{ color: '#DC2626' }}>
-              <Trash2 size={13} /><span>حذف سجلات الإجازة</span>
-            </button>
-            <button onClick={() => { resetRecords(); setEditing(null); setSearch('') }}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors hover:bg-elevated"
-              style={{ color: 'var(--text-secondary)' }}>
-              <RotateCcw size={13} /><span>إعادة تعيين الكل</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Right: employee cards */}
-        <div className="min-w-0">
           {/* Search */}
           <div className="relative mb-4">
             <Search size={14} className="absolute top-1/2 -translate-y-1/2 text-tertiary pointer-events-none"
               style={{ right: '0.75rem' }} />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="بحث عن موظف..."
-              className="we-input pr-9 w-full"
-            />
+            <input value={scheduleSearch} onChange={e => setScheduleSearch(e.target.value)}
+              placeholder="بحث عن موظف..." className="we-input pr-9 w-full" />
           </div>
 
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-bold text-primary">الموظفون · سنة {year}</h2>
-            <span className="text-xs text-tertiary">{sorted.length} موظف</span>
+            <h2 className="text-sm font-bold text-primary">الموظفون · من الجدول</h2>
+            <span className="text-xs text-tertiary">{filteredSchedule.length} موظف</span>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-            {sorted.map(summary => (
-              <EmployeeCard
-                key={summary.employee.id}
-                summary={summary}
-                records={empRecords[summary.employee.id] ?? []}
-                branches={branches}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
+          {filteredSchedule.length === 0 ? (
+            <div className="card p-12 text-center text-tertiary text-sm">
+              لا توجد إجازات سنوية في الجدول
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+              {filteredSchedule.map(e => (
+                <ScheduleLeaveCard key={e.employeeId} {...e} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── MANUAL TAB (legacy manual records) ── */}
+      {activeTab === 'manual' && (
+        <>
+          <AnnualLeaveKPICards kpi={kpi} />
+          <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
+            <div className="flex flex-col gap-4 lg:self-start lg:sticky lg:top-[72px]">
+              <AnnualLeaveForm
+                employees={employees} branches={branches} summaries={summaries}
+                editingRecord={editing} onSubmit={handleSubmit}
+                onCancelEdit={() => setEditing(null)} onEmployeeSelect={() => {}}
               />
-            ))}
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs"
+                style={{ background: 'var(--bg-elevated)', color: 'var(--text-tertiary)' }}>
+                <HardDrive size={12} style={{ color: WE, opacity: 0.7 }} />
+                <span>يتم الحفظ تلقائياً على هذا الجهاز</span>
+              </div>
+              <div className="card p-3 flex flex-col gap-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-tertiary mb-1">إعادة التعيين</p>
+                <button onClick={handleReset} disabled={records.length === 0}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors hover:bg-red-500/10 disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ color: '#DC2626' }}>
+                  <Trash2 size={13} /><span>حذف سجلات الإجازة</span>
+                </button>
+                <button onClick={() => { resetRecords(); setEditing(null); setSearch('') }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors hover:bg-elevated"
+                  style={{ color: 'var(--text-secondary)' }}>
+                  <RotateCcw size={13} /><span>إعادة تعيين الكل</span>
+                </button>
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="relative mb-4">
+                <Search size={14} className="absolute top-1/2 -translate-y-1/2 text-tertiary pointer-events-none"
+                  style={{ right: '0.75rem' }} />
+                <input value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="بحث عن موظف..." className="we-input pr-9 w-full" />
+              </div>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-bold text-primary">الموظفون · سنة {year}</h2>
+                <span className="text-xs text-tertiary">{sorted.length} موظف</span>
+              </div>
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                {sorted.map(summary => (
+                  <EmployeeCard
+                    key={summary.employee.id}
+                    summary={summary}
+                    records={empRecords[summary.employee.id] ?? []}
+                    branches={branches}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   )
 }
