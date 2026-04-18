@@ -13,9 +13,11 @@ const WE = '#6B21A8'
 
 function RoleBadge({ role }: { role?: EmployeeRole }) {
   if (!role) return <span className="text-tertiary text-xs">—</span>
-  return role === 'Senior'
-    ? <span className="badge" style={{ background: '#6B21A810', color: WE, borderColor: '#6B21A825' }}>سينيور</span>
-    : <span className="badge" style={{ background: '#05966910', color: '#059669', borderColor: '#05966925' }}>وكيل</span>
+  if (role === 'Supervisor')
+    return <span className="badge" style={{ background: '#92400e15', color: '#D97706', borderColor: '#92400e30' }}>Supervisor</span>
+  if (role === 'Senior')
+    return <span className="badge" style={{ background: '#6B21A810', color: WE, borderColor: '#6B21A825' }}>Senior</span>
+  return <span className="badge" style={{ background: '#05966910', color: '#059669', borderColor: '#05966925' }}>Agent</span>
 }
 
 // ── Empty form ────────────────────────────────────────────────────────────
@@ -146,15 +148,17 @@ function EmployeeModal({
             <div>
               <label className="block text-xs font-bold text-secondary mb-1">المستوى الوظيفي</label>
               <select value={form.level} onChange={e => set('level', +e.target.value)} className="we-input">
-                <option value={7}>7 — سينيور</option>
-                <option value={8}>8 — وكيل</option>
+                <option value={6}>6 — Supervisor</option>
+                <option value={7}>7 — Senior</option>
+                <option value={8}>8 — Agent</option>
               </select>
             </div>
             <div>
               <label className="block text-xs font-bold text-secondary mb-1">الدور</label>
               <select value={form.role} onChange={e => set('role', e.target.value as EmployeeRole)} className="we-input">
-                <option value="Agent">وكيل</option>
-                <option value="Senior">سينيور</option>
+                <option value="Supervisor">Supervisor</option>
+                <option value="Senior">Senior</option>
+                <option value="Agent">Agent</option>
               </select>
             </div>
           </div>
@@ -206,7 +210,7 @@ export default function EmployeesPage() {
   const [modalOpen,   setModalOpen]   = useState(false)
   const [editTarget,  setEditTarget]  = useState<Employee | null>(null)
   const [search,      setSearch]      = useState('')
-  const [roleFilter,  setRoleFilter]  = useState<'' | 'Senior' | 'Agent'>('')
+  const [roleFilter,  setRoleFilter]  = useState<'' | 'Supervisor' | 'Senior' | 'Agent'>('')
   const [expandedId,  setExpandedId]  = useState<string | null>(null)
 
   const filtered = useMemo(() => {
@@ -239,8 +243,9 @@ export default function EmployeesPage() {
     }
   }
 
-  const seniors = employees.filter(e => e.role === 'Senior').length
-  const agents  = employees.filter(e => e.role === 'Agent').length
+  const supervisors = employees.filter(e => e.role === 'Supervisor').length
+  const seniors     = employees.filter(e => e.role === 'Senior').length
+  const agents      = employees.filter(e => e.role === 'Agent').length
 
   return (
     <div style={{ direction: 'rtl' }}>
@@ -256,7 +261,7 @@ export default function EmployeesPage() {
             <h1 className="text-xl font-black text-primary">إدارة الموظفين</h1>
           </div>
           <p className="text-sm text-secondary">
-            {employees.length} موظف إجمالي · {seniors} سينيور · {agents} وكيل
+            {employees.length} موظف إجمالي · {supervisors} Supervisor · {seniors} Senior · {agents} Agent
           </p>
         </div>
         <button onClick={openAdd}
@@ -277,11 +282,12 @@ export default function EmployeesPage() {
             className="we-input pr-8 w-full"
           />
         </div>
-        <select value={roleFilter} onChange={e => setRoleFilter(e.target.value as '' | 'Senior' | 'Agent')}
+        <select value={roleFilter} onChange={e => setRoleFilter(e.target.value as '' | 'Supervisor' | 'Senior' | 'Agent')}
           className="we-input w-auto min-w-[130px]">
           <option value="">جميع الأدوار</option>
-          <option value="Senior">سينيور فقط</option>
-          <option value="Agent">وكلاء فقط</option>
+          <option value="Supervisor">Supervisor فقط</option>
+          <option value="Senior">Senior فقط</option>
+          <option value="Agent">Agents فقط</option>
         </select>
         <span className="text-xs text-tertiary">{filtered.length} نتيجة</span>
       </div>

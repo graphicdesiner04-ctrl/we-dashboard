@@ -37,7 +37,7 @@ const TITLES_EN: Record<string, string> = {
 // ── Role label (Arabic) ───────────────────────────────────────────────────
 
 const ROLE_AR: Record<string, string> = {
-  Senior:     'سينيور دعم فني',
+  Senior:     'Senior دعم فني',
   Super:      'سوبر دعم فني',
   Supervisor: 'مشرف الدعم الفني',
   Admin:      'مدير النظام',
