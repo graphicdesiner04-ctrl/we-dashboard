@@ -174,14 +174,14 @@ function EvalForm({
                 −
               </button>
               <input
-                type="number" min={1} max={100}
+                type="number" min={1}
                 value={degrees}
-                onChange={e => setDegrees(Math.max(1, Math.min(100, +e.target.value || 1)))}
+                onChange={e => setDegrees(Math.max(1, +e.target.value || 1))}
                 className="we-input text-center font-black text-lg flex-1"
                 style={{ color: direction === 1 ? GREEN : RED }}
               />
               <button type="button"
-                onClick={() => setDegrees(d => Math.min(100, d + 1))}
+                onClick={() => setDegrees(d => d + 1)}
                 className="w-8 h-full rounded-lg text-lg font-black text-secondary hover:text-primary hover:bg-elevated transition-colors flex items-center justify-center flex-shrink-0"
                 style={{ border: '1px solid var(--border)' }}>
                 +
