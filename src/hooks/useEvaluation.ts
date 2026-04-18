@@ -7,8 +7,8 @@ export type EvaluationRecord = {
   id:         string
   employeeId: string
   note:       string
-  score:      1 | -1      // +1 إيجابي / -1 سلبي
-  date:       string      // YYYY-MM-DD
+  score:      number   // موجب = إيجابي / سالب = سلبي (قيمة الدرجات)
+  date:       string   // YYYY-MM-DD
   branchId?:  string
   createdAt:  string
 }
@@ -16,11 +16,11 @@ export type EvaluationRecord = {
 export type EvaluationInput = Omit<EvaluationRecord, 'id' | 'createdAt'>
 
 export type EmployeeEvalSummary = {
-  employee:      Employee
-  totalPositive: number
-  totalNegative: number
-  netScore:      number
-  records:       EvaluationRecord[]
+  employee:           Employee
+  totalPositiveDeg:   number   // مجموع الدرجات الإيجابية
+  totalNegativeDeg:   number   // مجموع الدرجات السلبية (قيمة مطلقة)
+  netScore:           number   // الصافي
+  records:            EvaluationRecord[]
 }
 
 function uid() {
@@ -66,17 +66,19 @@ export function useEvaluation() {
     [records, month],
   )
 
-  // Per-employee summary (current year)
+  // Per-employee summary — مجموع الدرجات (مش عدد التقييمات)
   const summaries = useMemo((): EmployeeEvalSummary[] =>
     employees
       .map(emp => {
         const empRecs = currentYearRecords.filter(r => r.employeeId === emp.id)
+        const totalPositiveDeg = empRecs.filter(r => r.score > 0).reduce((s, r) => s + r.score, 0)
+        const totalNegativeDeg = empRecs.filter(r => r.score < 0).reduce((s, r) => s + Math.abs(r.score), 0)
         return {
-          employee:      emp,
-          totalPositive: empRecs.filter(r => r.score === 1).length,
-          totalNegative: empRecs.filter(r => r.score === -1).length,
-          netScore:      empRecs.reduce((s, r) => s + r.score, 0),
-          records:       empRecs,
+          employee:         emp,
+          totalPositiveDeg,
+          totalNegativeDeg,
+          netScore:         empRecs.reduce((s, r) => s + r.score, 0),
+          records:          empRecs,
         }
       })
       .filter(s => s.records.length > 0)
@@ -84,12 +86,13 @@ export function useEvaluation() {
   [employees, currentYearRecords])
 
   const kpi = useMemo(() => ({
-    totalRecords:   currentYearRecords.length,
-    totalPositive:  currentYearRecords.filter(r => r.score === 1).length,
-    totalNegative:  currentYearRecords.filter(r => r.score === -1).length,
-    uniqueEmployees: new Set(currentYearRecords.map(r => r.employeeId)).size,
-    monthPositive:  currentMonthRecords.filter(r => r.score === 1).length,
-    monthNegative:  currentMonthRecords.filter(r => r.score === -1).length,
+    totalRecords:      currentYearRecords.length,
+    totalPositiveDeg:  currentYearRecords.filter(r => r.score > 0).reduce((s, r) => s + r.score, 0),
+    totalNegativeDeg:  currentYearRecords.filter(r => r.score < 0).reduce((s, r) => s + Math.abs(r.score), 0),
+    uniqueEmployees:   new Set(currentYearRecords.map(r => r.employeeId)).size,
+    monthPositiveDeg:  currentMonthRecords.filter(r => r.score > 0).reduce((s, r) => s + r.score, 0),
+    monthNegativeDeg:  currentMonthRecords.filter(r => r.score < 0).reduce((s, r) => s + Math.abs(r.score), 0),
+    monthNet:          currentMonthRecords.reduce((s, r) => s + r.score, 0),
   }), [currentYearRecords, currentMonthRecords])
 
   return {

@@ -23,6 +23,7 @@ function fmtDate(d: string) {
 // ── KPI bar ───────────────────────────────────────────────────────────────
 
 function KPIBar({ kpi }: { kpi: ReturnType<typeof useEvaluation>['kpi'] }) {
+  const monthColor = kpi.monthNet > 0 ? GREEN : kpi.monthNet < 0 ? RED : 'var(--text-tertiary)'
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
       <div className="card p-4">
@@ -31,22 +32,26 @@ function KPIBar({ kpi }: { kpi: ReturnType<typeof useEvaluation>['kpi'] }) {
         <p className="text-xs text-tertiary mt-0.5">{kpi.uniqueEmployees} موظف</p>
       </div>
       <div className="card p-4">
-        <p className="text-xs text-secondary mb-1">إيجابيات</p>
-        <p className="text-2xl font-black num" style={{ color: GREEN }}>{kpi.totalPositive}</p>
-        <p className="text-xs text-tertiary mt-0.5">هذه السنة</p>
+        <p className="text-xs text-secondary mb-1">درجات إيجابية</p>
+        <p className="text-2xl font-black num" style={{ color: GREEN }}>+{kpi.totalPositiveDeg}</p>
+        <p className="text-xs text-tertiary mt-0.5">مجموع الدرجات — هذه السنة</p>
       </div>
       <div className="card p-4">
-        <p className="text-xs text-secondary mb-1">سلبيات</p>
-        <p className="text-2xl font-black num" style={{ color: RED }}>{kpi.totalNegative}</p>
-        <p className="text-xs text-tertiary mt-0.5">هذه السنة</p>
+        <p className="text-xs text-secondary mb-1">درجات سلبية</p>
+        <p className="text-2xl font-black num" style={{ color: RED }}>−{kpi.totalNegativeDeg}</p>
+        <p className="text-xs text-tertiary mt-0.5">مجموع الدرجات — هذه السنة</p>
       </div>
       <div className="card p-4">
-        <p className="text-xs text-secondary mb-1">هذا الشهر</p>
-        <div className="flex items-end gap-2">
-          <p className="text-2xl font-black num" style={{ color: GREEN }}>+{kpi.monthPositive}</p>
-          <p className="text-xl font-black num mb-0.5" style={{ color: RED }}>−{kpi.monthNegative}</p>
+        <p className="text-xs text-secondary mb-1">صافي هذا الشهر</p>
+        <p className="text-2xl font-black num" style={{ color: monthColor }}>
+          {kpi.monthNet > 0 ? '+' : ''}{kpi.monthNet}
+        </p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className="text-[10px] font-bold" style={{ color: GREEN }}>+{kpi.monthPositiveDeg}</span>
+          <span className="text-[10px] text-tertiary">/</span>
+          <span className="text-[10px] font-bold" style={{ color: RED }}>−{kpi.monthNegativeDeg}</span>
+          <span className="text-[10px] text-tertiary">درجة</span>
         </div>
-        <p className="text-xs text-tertiary mt-0.5">إيجابي / سلبي</p>
       </div>
     </div>
   )
@@ -64,8 +69,16 @@ function EvalForm({
   onCancel:  () => void
 }) {
   const { lang } = useLanguage()
+
+  // direction: + or -
+  const [direction, setDirection] = useState<1 | -1>(() =>
+    editing ? (editing.score >= 0 ? 1 : -1) : 1,
+  )
+  // degrees: absolute value
+  const [degrees,    setDegrees]    = useState<number>(() =>
+    editing ? Math.abs(editing.score) : 1,
+  )
   const [employeeId, setEmployeeId] = useState(editing?.employeeId ?? '')
-  const [score,      setScore]      = useState<1 | -1>(editing?.score ?? 1)
   const [note,       setNote]       = useState(editing?.note ?? '')
   const [date,       setDate]       = useState(editing?.date ?? todayStr())
   const [branchId,   setBranchId]   = useState(editing?.branchId ?? '')
@@ -73,15 +86,19 @@ function EvalForm({
   const isEdit = !!editing
 
   function reset() {
-    setEmployeeId(''); setScore(1); setNote(''); setDate(todayStr()); setBranchId('')
+    setEmployeeId(''); setDirection(1); setDegrees(1); setNote(''); setDate(todayStr()); setBranchId('')
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!employeeId || !note.trim()) return
+    if (!employeeId || !note.trim() || degrees < 1) return
+    const score = direction * degrees
     onSubmit({ employeeId, score, note: note.trim(), date, branchId: branchId || undefined })
     if (!isEdit) reset()
   }
+
+  // Live preview of score
+  const scorePreview = direction * degrees
 
   return (
     <div className="we-form-section">
@@ -103,6 +120,8 @@ function EvalForm({
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
+
+        {/* Employee */}
         <div>
           <label className="block text-xs font-bold text-secondary mb-1">
             الموظف <span className="text-red-500">*</span>
@@ -115,42 +134,78 @@ function EvalForm({
           </select>
         </div>
 
-        {/* Score toggle */}
+        {/* Direction + Degrees — في صف واحد */}
         <div>
-          <label className="block text-xs font-bold text-secondary mb-1">نوع التقييم</label>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button"
-              onClick={() => setScore(1)}
-              className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border-2 transition-all"
-              style={score === 1
-                ? { background: `${GREEN}15`, borderColor: GREEN, color: GREEN }
-                : { borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-              <ThumbsUp size={14} /> إيجابي
-            </button>
-            <button type="button"
-              onClick={() => setScore(-1)}
-              className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border-2 transition-all"
-              style={score === -1
-                ? { background: `${RED}15`, borderColor: RED, color: RED }
-                : { borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-              <ThumbsDown size={14} /> سلبي
-            </button>
+          <label className="block text-xs font-bold text-secondary mb-1">
+            النوع والدرجات
+            {/* Live preview */}
+            <span className="mr-2 font-black text-sm"
+              style={{ color: scorePreview > 0 ? GREEN : RED }}>
+              ({scorePreview > 0 ? '+' : ''}{scorePreview} درجة)
+            </span>
+          </label>
+          <div className="flex gap-2">
+            {/* Direction toggle */}
+            <div className="flex gap-1 flex-shrink-0">
+              <button type="button"
+                onClick={() => setDirection(1)}
+                className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-bold border-2 transition-all"
+                style={direction === 1
+                  ? { background: `${GREEN}15`, borderColor: GREEN, color: GREEN }
+                  : { borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}>
+                <ThumbsUp size={13} /> إيجابي
+              </button>
+              <button type="button"
+                onClick={() => setDirection(-1)}
+                className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-bold border-2 transition-all"
+                style={direction === -1
+                  ? { background: `${RED}15`, borderColor: RED, color: RED }
+                  : { borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}>
+                <ThumbsDown size={13} /> سلبي
+              </button>
+            </div>
+
+            {/* Degrees number input */}
+            <div className="flex-1 flex items-center gap-1">
+              <button type="button"
+                onClick={() => setDegrees(d => Math.max(1, d - 1))}
+                className="w-8 h-full rounded-lg text-lg font-black text-secondary hover:text-primary hover:bg-elevated transition-colors flex items-center justify-center flex-shrink-0"
+                style={{ border: '1px solid var(--border)' }}>
+                −
+              </button>
+              <input
+                type="number" min={1} max={100}
+                value={degrees}
+                onChange={e => setDegrees(Math.max(1, Math.min(100, +e.target.value || 1)))}
+                className="we-input text-center font-black text-lg flex-1"
+                style={{ color: direction === 1 ? GREEN : RED }}
+              />
+              <button type="button"
+                onClick={() => setDegrees(d => Math.min(100, d + 1))}
+                className="w-8 h-full rounded-lg text-lg font-black text-secondary hover:text-primary hover:bg-elevated transition-colors flex items-center justify-center flex-shrink-0"
+                style={{ border: '1px solid var(--border)' }}>
+                +
+              </button>
+            </div>
           </div>
         </div>
 
+        {/* Note */}
         <div>
           <label className="block text-xs font-bold text-secondary mb-1">
-            الملاحظة <span className="text-red-500">*</span>
+            الكومنت / الملاحظة <span className="text-red-500">*</span>
           </label>
           <textarea value={note} onChange={e => setNote(e.target.value)}
-            placeholder="وصف التقييم..." className="we-input resize-none" rows={3} maxLength={300} required />
+            placeholder="اكتب سبب التقييم..." className="we-input resize-none" rows={3} maxLength={300} required />
         </div>
 
+        {/* Date */}
         <div>
           <label className="block text-xs font-bold text-secondary mb-1">التاريخ</label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} className="we-input" />
         </div>
 
+        {/* Branch */}
         <div>
           <label className="block text-xs font-bold text-secondary mb-1">الفرع (اختياري)</label>
           <select value={branchId} onChange={e => setBranchId(e.target.value)} className="we-input">
@@ -164,10 +219,13 @@ function EvalForm({
         </div>
 
         <button type="submit"
-          disabled={!employeeId || !note.trim()}
+          disabled={!employeeId || !note.trim() || degrees < 1}
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
           style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
-          {isEdit ? <><Save size={14} />حفظ التعديلات</> : <><Plus size={14} />إضافة التقييم</>}
+          {isEdit
+            ? <><Save size={14} />حفظ التعديلات</>
+            : <><Plus size={14} />إضافة تقييم ({scorePreview > 0 ? '+' : ''}{scorePreview} درجة)</>
+          }
         </button>
       </form>
     </div>
@@ -185,7 +243,7 @@ function EmployeeEvalCard({
   onDelete: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
-  const { employee, totalPositive, totalNegative, netScore, records } = summary
+  const { employee, totalPositiveDeg, totalNegativeDeg, netScore, records } = summary
   const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
   const name = getEmpName(employee)
 
@@ -197,19 +255,33 @@ function EmployeeEvalCard({
         onClick={() => setOpen(o => !o)}
         className="w-full px-4 py-3 flex items-center gap-3 text-right hover:bg-white/[0.02] transition-colors"
       >
+        {/* Avatar */}
         <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0"
           style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
           {name.charAt(0)}
         </div>
-        <div className="flex-1 min-w-0">
+
+        {/* Name + degree bars */}
+        <div className="flex-1 min-w-0 text-right">
           <p className="font-bold text-primary text-sm truncate">{name}</p>
-          <div className="flex items-center gap-3 mt-0.5">
-            <span className="text-[10px] font-bold" style={{ color: GREEN }}>+{totalPositive} إيجابي</span>
-            <span className="text-[10px] font-bold" style={{ color: RED }}>−{totalNegative} سلبي</span>
+          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+            <span className="text-[10px] font-bold" style={{ color: GREEN }}>
+              +{totalPositiveDeg} درجة إيجابية
+            </span>
+            <span className="text-[10px] font-bold" style={{ color: RED }}>
+              −{totalNegativeDeg} درجة سلبية
+            </span>
+            <span className="text-[10px] text-tertiary">({records.length} تقييم)</span>
           </div>
         </div>
+
+        {/* Net score badge */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-lg font-black num" style={{ color: scoreColor }}>
+          <span className="text-lg font-black num px-2 py-0.5 rounded-xl"
+            style={{
+              color: scoreColor,
+              background: netScore > 0 ? `${GREEN}12` : netScore < 0 ? `${RED}12` : 'var(--bg-elevated)',
+            }}>
             {netScore > 0 ? '+' : ''}{netScore}
           </span>
           {open ? <ChevronUp size={14} className="text-tertiary" /> : <ChevronDown size={14} className="text-tertiary" />}
@@ -220,31 +292,39 @@ function EmployeeEvalCard({
         <div className="border-t" style={{ borderColor: 'var(--border)' }}>
           <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
             {records.map(rec => {
-              const br = rec.branchId ? branchMap[rec.branchId] : null
+              const br    = rec.branchId ? branchMap[rec.branchId] : null
+              const isPos = rec.score > 0
               return (
                 <div key={rec.id} className="px-4 py-3 flex items-start gap-3">
-                  <div className="mt-0.5 flex-shrink-0">
-                    {rec.score === 1
-                      ? <ThumbsUp size={13} style={{ color: GREEN }} />
-                      : <ThumbsDown size={13} style={{ color: RED }} />
-                    }
+                  {/* Score badge */}
+                  <div className="mt-0.5 flex-shrink-0 flex items-center justify-center w-10 h-6 rounded-lg text-xs font-black"
+                    style={{
+                      background: isPos ? `${GREEN}15` : `${RED}15`,
+                      color: isPos ? GREEN : RED,
+                    }}>
+                    {isPos ? '+' : ''}{rec.score}
                   </div>
+
+                  {/* Note + meta */}
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-primary leading-relaxed">{rec.note}</p>
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       <span className="text-[10px] text-tertiary num">{fmtDate(rec.date)}</span>
                       {br && <span className="text-[10px] text-tertiary">{br.storeNameAr || br.storeName}</span>}
+                      <span className="text-[10px] font-bold" style={{ color: isPos ? GREEN : RED }}>
+                        {isPos ? `+${rec.score}` : rec.score} درجة
+                      </span>
                     </div>
                   </div>
+
+                  {/* Actions */}
                   <div className="flex gap-0.5 flex-shrink-0">
                     <button onClick={() => onEdit(rec)}
-                      className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
-                      title="تعديل">
+                      className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors" title="تعديل">
                       <Pencil size={12} />
                     </button>
                     <button onClick={() => onDelete(rec.id)}
-                      className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                      title="حذف">
+                      className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors" title="حذف">
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -299,7 +379,7 @@ export default function EvaluationPage() {
             <h1 className="text-xl font-black text-primary">التقييمات</h1>
           </div>
           <p className="text-sm text-secondary">
-            تقييم أداء الموظفين إيجابياً وسلبياً · سنة {year}
+            تقييم أداء الموظفين بالدرجات · تجميع شهري · سنة {year}
           </p>
         </div>
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white flex-shrink-0"
@@ -325,16 +405,11 @@ export default function EvaluationPage() {
 
         {/* Right: employee cards */}
         <div className="min-w-0">
-          {/* Search */}
           <div className="relative mb-4">
             <Search size={14} className="absolute top-1/2 -translate-y-1/2 text-tertiary pointer-events-none"
               style={{ right: '0.75rem' }} />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="بحث عن موظف..."
-              className="we-input pr-9 w-full"
-            />
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="بحث عن موظف..." className="we-input pr-9 w-full" />
           </div>
 
           <div className="flex items-center justify-between mb-3">
