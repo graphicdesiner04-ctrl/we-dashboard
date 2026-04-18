@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
-import { Calendar, Search, Pencil, Trash2, ChevronDown, ChevronUp, HardDrive, RotateCcw } from 'lucide-react'
+import { Calendar, Search, Pencil, Trash2, ChevronDown, ChevronUp, HardDrive, RotateCcw, CalendarDays } from 'lucide-react'
 import AnnualLeaveKPICards from '@/components/hr/AnnualLeaveKPICards'
 import AnnualLeaveForm     from '@/components/hr/AnnualLeaveForm'
 import { useAnnualLeave }  from '@/hooks/useAnnualLeave'
+import { useDataEngine }   from '@/hooks/useDataEngine'
 import { getEmpName }      from '@/data/seedData'
 import { ANNUAL_LEAVE_DAYS } from '@/types/hr'
 import type { AnnualLeaveRecord, AnnualLeaveSummary, Branch } from '@/types/hr'
@@ -157,6 +158,10 @@ export default function AnnualLeavePage() {
     summaries, kpi, addRecord, updateRecord, deleteRecord, resetRecords,
   } = useAnnualLeave()
 
+  // Schedule-sourced annual leaves
+  const { annualLeavesFromSchedule, empMap: engineEmpMap, branchMap: engineBranchMap } = useDataEngine()
+  const [scheduleTab, setScheduleTab] = useState(false)
+
   const [editing, setEditing] = useState<AnnualLeaveRecord | null>(null)
   const [search,  setSearch]  = useState('')
 
@@ -226,6 +231,69 @@ export default function AnnualLeavePage() {
       </div>
 
       <AnnualLeaveKPICards kpi={kpi} />
+
+      {/* Schedule-sourced leaves banner */}
+      {annualLeavesFromSchedule.length > 0 && (
+        <div className="mb-5 card overflow-hidden">
+          <button
+            onClick={() => setScheduleTab(o => !o)}
+            className="w-full px-4 py-3 flex items-center gap-3 text-right hover:bg-white/[0.02] transition-colors"
+          >
+            <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ background: `${WE}15` }}>
+              <CalendarDays size={14} style={{ color: WE }} />
+            </div>
+            <span className="flex-1 font-bold text-sm text-primary">
+              إجازات من الجدول
+            </span>
+            <span className="text-xs font-black num px-2 py-0.5 rounded-full mr-1"
+              style={{ background: `${WE}15`, color: WE }}>
+              {annualLeavesFromSchedule.length}
+            </span>
+            {scheduleTab
+              ? <ChevronUp size={14} className="text-tertiary" />
+              : <ChevronDown size={14} className="text-tertiary" />
+            }
+          </button>
+          {scheduleTab && (
+            <div className="border-t" style={{ borderColor: 'var(--border)' }}>
+              <p className="px-4 py-2 text-[11px] text-tertiary"
+                style={{ background: 'var(--bg-elevated)' }}>
+                هذه الإجازات مسجّلة في الجدول (cellType = annual) — للمراجعة فقط
+              </p>
+              <div className="divide-y max-h-64 overflow-y-auto" style={{ borderColor: 'var(--border)' }}>
+                {annualLeavesFromSchedule.map((lv, idx) => {
+                  const emp = engineEmpMap[lv.employeeId]
+                  const br  = engineBranchMap[lv.branchId]
+                  return (
+                    <div key={idx} className="px-4 py-2.5 flex items-center gap-3">
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-black flex-shrink-0"
+                        style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
+                        {emp ? getEmpName(emp).charAt(0) : '?'}
+                      </div>
+                      <span className="flex-1 text-xs font-semibold text-primary">
+                        {emp ? getEmpName(emp) : lv.employeeId}
+                      </span>
+                      <span className="text-xs text-secondary num">
+                        {fmtDate(lv.date)}
+                      </span>
+                      {br && (
+                        <span className="text-[10px] text-tertiary">
+                          {br.storeNameAr || br.storeName}
+                        </span>
+                      )}
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                        style={{ background: `${WE}15`, color: WE }}>
+                        سنوي
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
 

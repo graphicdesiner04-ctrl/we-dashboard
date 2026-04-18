@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
-import { GitBranch, Plus, Pencil, Trash2, X, Save, Search, Calendar } from 'lucide-react'
+import { GitBranch, Plus, Pencil, Trash2, X, Save, Search, Calendar, Users } from 'lucide-react'
 import { useBranches }    from '@/hooks/useBranches'
 import { useAssignments } from '@/hooks/useAssignments'
 import { useEmployees }   from '@/hooks/useEmployees'
+import { useDataEngine }  from '@/hooks/useDataEngine'
 import { getEmpName }     from '@/data/seedData'
 import type { Branch, AssignmentHistory } from '@/types/hr'
 import type { BranchInput }     from '@/hooks/useBranches'
@@ -267,10 +268,19 @@ export default function BranchesPage() {
   const [branchSearch,    setBranchSearch]    = useState('')
   const [assignSearch,    setAssignSearch]    = useState('')
   const [assignBranchFlt, setAssignBranchFlt] = useState('')
-  const [activeTab,       setActiveTab]       = useState<'branches' | 'assignments'>('branches')
+  const [activeTab,       setActiveTab]       = useState<'branches' | 'assignments' | 'today'>('branches')
 
   const empMap    = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
   const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
+
+  // Today's assignments from schedule
+  const { todayAssignments, empMap: engineEmpMap, BRANCHES: engineBranches } = useDataEngine()
+  const todayBranchIds = useMemo(() =>
+    engineBranches.filter(b => todayAssignments[b.id]?.length > 0).map(b => b.id),
+  [engineBranches, todayAssignments])
+  const todayTotal = useMemo(() =>
+    Object.values(todayAssignments).reduce((s, arr) => s + arr.length, 0),
+  [todayAssignments])
 
   const filteredBranches = useMemo(() => {
     const q = branchSearch.toLowerCase()
@@ -355,17 +365,32 @@ export default function BranchesPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 mb-5 p-1 rounded-xl w-fit"
+      <div className="flex items-center gap-1 mb-5 p-1 rounded-xl w-fit flex-wrap"
         style={{ background: 'var(--bg-elevated)' }}>
-        {(['branches', 'assignments'] as const).map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)}
-            className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
-            style={activeTab === tab
-              ? { background: WE, color: '#fff' }
-              : { color: 'var(--text-secondary)' }}>
-            {tab === 'branches' ? `الفروع (${branches.length})` : `التكليفات (${assignments.length})`}
-          </button>
-        ))}
+        <button onClick={() => setActiveTab('branches')}
+          className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
+          style={activeTab === 'branches' ? { background: WE, color: '#fff' } : { color: 'var(--text-secondary)' }}>
+          الفروع ({branches.length})
+        </button>
+        <button onClick={() => setActiveTab('assignments')}
+          className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
+          style={activeTab === 'assignments' ? { background: WE, color: '#fff' } : { color: 'var(--text-secondary)' }}>
+          التكليفات ({assignments.length})
+        </button>
+        <button onClick={() => setActiveTab('today')}
+          className="px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-1.5"
+          style={activeTab === 'today' ? { background: WE, color: '#fff' } : { color: 'var(--text-secondary)' }}>
+          <Users size={13} />
+          موظفو اليوم
+          {todayTotal > 0 && (
+            <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+              style={activeTab === 'today'
+                ? { background: 'rgba(255,255,255,0.25)', color: '#fff' }
+                : { background: `${WE}20`, color: WE }}>
+              {todayTotal}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* ── BRANCHES TAB ── */}
@@ -603,6 +628,74 @@ export default function BranchesPage() {
               })}
             </div>
           </div>
+        </>
+      )}
+
+      {/* ── TODAY TAB ── */}
+      {activeTab === 'today' && (
+        <>
+          <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm"
+            style={{ background: `${WE}10`, border: `1px solid ${WE}25` }}>
+            <Users size={14} style={{ color: WE }} />
+            <span className="font-bold" style={{ color: WE }}>
+              موظفو اليوم من الجدول
+            </span>
+            <span className="text-xs text-secondary mr-2">
+              — {new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </span>
+            <span className="mr-auto text-xs font-black num" style={{ color: WE }}>
+              {todayTotal} موظف في {todayBranchIds.length} فرع
+            </span>
+          </div>
+
+          {todayTotal === 0 ? (
+            <div className="card p-10 text-center text-tertiary text-sm">
+              لا يوجد موظفون في الجدول لهذا اليوم
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {engineBranches.filter(b => (todayAssignments[b.id]?.length ?? 0) > 0).map(branch => {
+                const empIds = todayAssignments[branch.id] ?? []
+                return (
+                  <div key={branch.id} className="card overflow-hidden">
+                    <div className="px-4 py-3 flex items-center gap-2"
+                      style={{ borderBottom: '1px solid var(--border)', background: `${WE}08` }}>
+                      <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+                        style={{ background: `${WE}20` }}>
+                        <GitBranch size={12} style={{ color: WE }} />
+                      </div>
+                      <span className="font-bold text-sm text-primary flex-1 truncate">
+                        {branch.storeNameAr || branch.storeName}
+                      </span>
+                      <span className="text-xs font-black num px-2 py-0.5 rounded-full"
+                        style={{ background: `${WE}15`, color: WE }}>
+                        {empIds.length}
+                      </span>
+                    </div>
+                    <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+                      {empIds.map(eid => {
+                        const emp = engineEmpMap[eid]
+                        if (!emp) return null
+                        const name = getEmpName(emp)
+                        return (
+                          <div key={eid} className="px-4 py-2.5 flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-black flex-shrink-0"
+                              style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
+                              {name.charAt(0)}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-primary truncate">{name}</p>
+                              <p className="text-[10px] text-tertiary">{emp.role ?? emp.level}</p>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </>
       )}
 
