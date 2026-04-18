@@ -1446,7 +1446,9 @@ function AnalyticsView({ entries, employees, branches }: {
 export default function SchedulePage() {
   const { employees, branches, entries, alerts, addEntry, updateEntry, deleteEntry, resetEntries, overwriteEntries } = useSchedule()
   const { records: couRecords, addRecord: addCOU, updateRecord: updateCOU, deleteRecord: deleteCOU } = useChangeOU()
-  const { ouChangeAlerts } = useDataEngine()
+  const { ouChangeAlerts: allOUAlerts } = useDataEngine()
+  const today0 = new Date().toISOString().slice(0, 10)
+  const ouChangeAlerts = allOUAlerts.filter(a => a.date >= today0)
 
   const [year,  setYear]  = useState(() => new Date().getFullYear())
   const [month, setMonth] = useState(() => new Date().getMonth() + 1)
