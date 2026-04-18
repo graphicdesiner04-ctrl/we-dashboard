@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   Clock, Calendar, HeartPulse, Repeat2, CalendarOff, Upload,
-  Server, ArrowLeft, CalendarDays, Users, GitBranch, AlertTriangle,
+  Server, ArrowLeft, CalendarDays, Users, GitBranch, AlertTriangle, Star,
 } from 'lucide-react'
 import { useDataEngine } from '@/hooks/useDataEngine'
 
@@ -67,6 +67,13 @@ const ACTIVE_MODULES = [
     icon: GitBranch,
     label: 'الفروع والتكليفات',
     desc: 'إدارة الفروع وتاريخ تكليفات الموظفين',
+    color: '#6B21A8',
+  },
+  {
+    path: '/evaluation',
+    icon: Star,
+    label: 'التقييمات',
+    desc: 'تقييم أداء الموظفين إيجابياً وسلبياً · تجميع شهري',
     color: '#6B21A8',
   },
 ]

@@ -12,6 +12,7 @@ import SickLeavePage       from '@/pages/SickLeavePage'
 import InsteadOfPage       from '@/pages/InsteadOfPage'
 import WorkingDayOffPage   from '@/pages/WorkingDayOffPage'
 import SchedulePage        from '@/pages/SchedulePage'
+import EvaluationPage      from '@/pages/EvaluationPage'
 
 // ── Protected layout wrapper ──────────────────────────────────────────────
 // Redirects to /login if user is not authenticated.
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/instead-of"       element={<InsteadOfPage />} />
         <Route path="/day-off"          element={<WorkingDayOffPage />} />
         <Route path="/schedule"         element={<SchedulePage />} />
+        <Route path="/evaluation"       element={<EvaluationPage />} />
       </Route>
 
       {/* Fallback */}

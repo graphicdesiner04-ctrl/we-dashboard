@@ -386,6 +386,7 @@ export default function InsteadOfPage() {
         {/* Left: form */}
         <div className="lg:self-start lg:sticky lg:top-[72px]">
           <InsteadOfForm
+            key={editing?.id ?? 'new'}
             employees={employees} branches={branches}
             editing={editing} onSubmit={handleSubmit}
             onCancel={() => setEditing(null)}

@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Clock, Calendar, HeartPulse,
   Repeat2, CalendarOff, Upload, Server,
-  Users, GitBranch, CalendarDays,
+  Users, GitBranch, CalendarDays, Star,
   ChevronLeft, ChevronRight, X, LogOut,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -24,6 +24,7 @@ const MAIN_NAV = [
   { path: '/branch-technical', icon: Server,          labelAr: 'البنية التقنية',     labelEn: 'Technical Infra'        },
   { path: '/employees',        icon: Users,           labelAr: 'الموظفون',           labelEn: 'Employees'              },
   { path: '/branches',         icon: GitBranch,       labelAr: 'الفروع والتكليفات',  labelEn: 'Branches & Assignments' },
+  { path: '/evaluation',       icon: Star,            labelAr: 'التقييمات',          labelEn: 'Evaluations'            },
 ]
 
 const SOON_NAV = [
