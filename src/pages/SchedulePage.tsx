@@ -7,6 +7,8 @@ import {
 } from 'lucide-react'
 import { useSchedule }   from '@/hooks/useSchedule'
 import { useChangeOU }   from '@/hooks/useChangeOU'
+import { useDataEngine } from '@/hooks/useDataEngine'
+import type { OUChangeAlert } from '@/hooks/useDataEngine'
 import { getEmpName }    from '@/data/seedData'
 import type { ScheduleEntry, ScheduleCellType, ChangeOURecord } from '@/types/hr'
 import type { ScheduleInput } from '@/hooks/useSchedule'
@@ -952,11 +954,13 @@ function ChangeOUModal({ editing, branches, employees, preset, onClose, onSave, 
 
 // ── Change OU view ────────────────────────────────────────────────────────
 
-function ChangeOUView({ records, onAdd, onEdit, onDelete }: {
-  records:  ChangeOURecord[]
-  onAdd:    () => void
-  onEdit:   (r: ChangeOURecord) => void
-  onDelete: (id: string) => void
+function ChangeOUView({ records, autoAlerts, onAdd, onEdit, onDelete, onDocument }: {
+  records:    ChangeOURecord[]
+  autoAlerts: OUChangeAlert[]
+  onAdd:      () => void
+  onEdit:     (r: ChangeOURecord) => void
+  onDelete:   (id: string) => void
+  onDocument: (alert: OUChangeAlert) => void
 }) {
   function exportAll() {
     if (!records.length) { alert('لا توجد سجلات'); return }
@@ -990,13 +994,28 @@ function ChangeOUView({ records, onAdd, onEdit, onDelete }: {
     XLSX.writeFile(wb, `Change OU - ${label}.xlsx`)
   }
 
+  // Group auto-alerts by date for display
+  const alertsByDate = useMemo(() => {
+    const map = new Map<string, OUChangeAlert[]>()
+    for (const a of autoAlerts) {
+      const arr = map.get(a.date) ?? []
+      arr.push(a)
+      map.set(a.date, arr)
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [autoAlerts])
+
   return (
     <div style={{ direction: 'rtl' }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-sm font-black text-primary">سجلات تغيير OU</h2>
-          <p className="text-xs text-secondary mt-0.5">{records.length} سجل مسجل</p>
+          <h2 className="text-sm font-black text-primary">تغيير OU</h2>
+          <p className="text-xs text-secondary mt-0.5">
+            <span className="font-bold" style={{ color: '#F59E0B' }}>{autoAlerts.length} كشف تلقائي</span>
+            {records.length > 0 && <span className="mx-1.5 text-tertiary">·</span>}
+            {records.length > 0 && <span>{records.length} سجل موثَّق</span>}
+          </p>
         </div>
         <div className="flex gap-2">
           <button onClick={exportAll}
@@ -1007,16 +1026,93 @@ function ChangeOUView({ records, onAdd, onEdit, onDelete }: {
           <button onClick={onAdd}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
             style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
-            <Plus size={12} /> إضافة
+            <Plus size={12} /> إضافة يدوي
           </button>
         </div>
       </div>
+
+      {/* ── AUTO-DETECTED from schedule ─────────────────────────────────── */}
+      {autoAlerts.length > 0 && (
+        <div className="mb-5">
+          <div className="flex items-center gap-2 mb-3 px-1">
+            <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: '#F59E0B20' }}>
+              <Bell size={12} style={{ color: '#F59E0B' }} />
+            </div>
+            <span className="text-xs font-black text-primary">كشف تلقائي من الجدول</span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: '#F59E0B20', color: '#F59E0B' }}>
+              {autoAlerts.length} حركة
+            </span>
+            <span className="text-[10px] text-tertiary mr-auto">
+              الجدول اكتشف تلقائياً التواريخ اللي تغيّر فيها فرع الموظف
+            </span>
+          </div>
+
+          <div className="card overflow-hidden">
+            {alertsByDate.map(([date, alerts]) => (
+              <div key={date}>
+                {/* Date header */}
+                <div className="px-4 py-2 flex items-center gap-2"
+                  style={{ background: '#F59E0B08', borderBottom: '1px solid #F59E0B20' }}>
+                  <span className="text-[11px] font-black num" style={{ color: '#F59E0B' }}>
+                    {new Date(date + 'T00:00:00').toLocaleDateString('ar-EG', {
+                      weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+                    })}
+                  </span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                    style={{ background: '#F59E0B20', color: '#F59E0B' }}>
+                    {alerts.length} موظف
+                  </span>
+                </div>
+
+                {/* Employees under this date */}
+                <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+                  {alerts.map(a => (
+                    <div key={`${a.employeeId}-${a.date}`}
+                      className="px-4 py-3 flex items-center gap-3 flex-wrap">
+                      {/* Avatar */}
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0"
+                        style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
+                        {a.employeeName.charAt(0)}
+                      </div>
+
+                      {/* Name */}
+                      <span className="font-bold text-sm text-primary min-w-[120px]">{a.employeeName}</span>
+
+                      {/* From → To */}
+                      <div className="flex items-center gap-2 flex-1">
+                        <span className="text-xs font-semibold px-2 py-1 rounded-lg"
+                          style={{ background: 'rgba(220,38,38,0.12)', color: '#DC2626' }}>
+                          {a.fromBranch}
+                        </span>
+                        <span className="text-tertiary text-xs">←</span>
+                        <span className="text-xs font-semibold px-2 py-1 rounded-lg"
+                          style={{ background: 'rgba(5,150,105,0.12)', color: '#059669' }}>
+                          {a.toBranch}
+                        </span>
+                      </div>
+
+                      {/* Document button */}
+                      <button onClick={() => onDocument(a)}
+                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-80"
+                        style={{ background: `${WE}15`, color: WE }}>
+                        <Repeat2 size={11} /> توثيق OU
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Info note */}
       <div className="card p-3 mb-4 flex items-start gap-2" style={{ background: '#F59E0B08', border: '1px solid #F59E0B30' }}>
         <AlertTriangle size={13} style={{ color: '#F59E0B', flexShrink: 0, marginTop: 1 }} />
         <p className="text-xs" style={{ color: '#F59E0B' }}>
-          سجل تغيير OU يُستخدم لتوثيق نقل موظف من فرع لآخر. اضغط "تصدير Excel" لإرساله لنظام TEData.
+          السجلات الموثَّقة تُستخدم لإرسالها لنظام TEData. اضغط "توثيق OU" بجانب أي حركة تلقائية لإنشاء سجل رسمي، ثم "تصدير Excel".
         </p>
       </div>
 
@@ -1350,6 +1446,7 @@ function AnalyticsView({ entries, employees, branches }: {
 export default function SchedulePage() {
   const { employees, branches, entries, alerts, addEntry, updateEntry, deleteEntry, resetEntries, overwriteEntries } = useSchedule()
   const { records: couRecords, addRecord: addCOU, updateRecord: updateCOU, deleteRecord: deleteCOU } = useChangeOU()
+  const { ouChangeAlerts } = useDataEngine()
 
   const [year,  setYear]  = useState(() => new Date().getFullYear())
   const [month, setMonth] = useState(() => new Date().getMonth() + 1)
@@ -1434,6 +1531,22 @@ export default function SchedulePage() {
   function handleCOUDelete() { if (!editingCOU) return; if (window.confirm('حذف هذا السجل؟')) { deleteCOU(editingCOU.id); setCouModal(false); setEditingCOU(null); setCouPreset(undefined) } }
   function openCOUFromAlert(preset: Partial<ChangeOUInput>) { setCouPreset(preset); setEditingCOU(null); setCouModal(true) }
 
+  // Convert auto-detected OUChangeAlert → COU form preset then open modal
+  function openCOUFromAutoAlert(a: OUChangeAlert) {
+    const emp = employees.find(e => e.id === a.employeeId)
+    const preset: Partial<ChangeOUInput> = {
+      userAccount:    emp?.domainName ?? emp?.user ?? '',
+      accountName:    a.employeeName,
+      email:          emp?.email ?? '',
+      mobile:         emp?.mobile ?? '',
+      employeeNumber: emp?.employeeCode ?? '',
+      oldOU:          a.fromBranch,
+      newOU:          a.toBranch,
+      note:           `تغيير تلقائي بتاريخ ${a.date}`,
+    }
+    setCouPreset(preset); setEditingCOU(null); setCouModal(true); setView('changeou')
+  }
+
   const monthLabel   = new Date(year, month - 1, 1).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })
   const todayDisplay = new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -1495,10 +1608,13 @@ export default function SchedulePage() {
               {v === 'changeou' && <Repeat2 size={11} />}
               {v === 'analytics' && <BarChart2 size={11} />}
               {label}
-              {v === 'changeou' && couRecords.length > 0 && (
+              {v === 'changeou' && (ouChangeAlerts.length > 0 || couRecords.length > 0) && (
                 <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-black"
-                  style={{ background: view === 'changeou' ? 'rgba(255,255,255,0.2)' : `${WE}20`, color: view === 'changeou' ? '#fff' : WE }}>
-                  {couRecords.length}
+                  style={{
+                    background: view === 'changeou' ? 'rgba(255,255,255,0.2)' : '#F59E0B20',
+                    color: view === 'changeou' ? '#fff' : '#F59E0B',
+                  }}>
+                  {ouChangeAlerts.length + couRecords.length}
                 </span>
               )}
             </button>
@@ -1545,9 +1661,11 @@ export default function SchedulePage() {
       {view === 'changeou' ? (
         <ChangeOUView
           records={couRecords}
+          autoAlerts={ouChangeAlerts}
           onAdd={() => { setEditingCOU(null); setCouModal(true) }}
           onEdit={r => { setEditingCOU(r); setCouModal(true) }}
           onDelete={id => { if (window.confirm('حذف هذا السجل؟')) deleteCOU(id) }}
+          onDocument={openCOUFromAutoAlert}
         />
       ) : view === 'analytics' ? (
         <AnalyticsView entries={entries} employees={employees} branches={branches} />
