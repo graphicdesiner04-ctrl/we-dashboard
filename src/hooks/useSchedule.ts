@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import type { Employee, Branch, ScheduleEntry, ScheduleAlert } from '@/types/hr'
-import { EMPLOYEES, BRANCHES } from '@/data/seedData'
+import type { Employee, Branch, ScheduleEntry, ScheduleAlert, ScheduleCellType } from '@/types/hr'
+import { EMPLOYEES, BRANCHES, SEED_SCHEDULE_ENTRIES } from '@/data/seedData'
 import { storage } from '@/lib/storage'
 
 function uid() {
@@ -9,8 +9,11 @@ function uid() {
 
 export type ScheduleInput = {
   employeeId: string
-  branchId:   string
+  branchId?:  string
   date:       string
+  cellType:   ScheduleCellType
+  startTime?: string
+  endTime?:   string
   note:       string
 }
 
@@ -22,23 +25,36 @@ export function useSchedule() {
     () => storage.get<Branch[]>('branches', BRANCHES),
   )
 
-  const [entries, setEntries] = useState<ScheduleEntry[]>(
-    () => storage.get<ScheduleEntry[]>('schedule-entries', []),
-  )
+  const [entries, setEntries] = useState<ScheduleEntry[]>(() => {
+    const raw = storage.get<ScheduleEntry[] | null>('schedule-entries', null)
+    if (raw !== null && Array.isArray(raw)) return raw.map(e => ({ ...e, cellType: e.cellType ?? 'branch' }))
+    // First visit — load seed data from HTML schedule
+    return (SEED_SCHEDULE_ENTRIES as unknown as ScheduleEntry[])
+  })
 
   useEffect(() => { storage.set('schedule-entries', entries) }, [entries])
 
   const addEntry = useCallback((input: ScheduleInput) => {
-    setEntries(prev => [...prev, { id: uid(), ...input, createdAt: new Date().toISOString() }])
+    setEntries(prev => [...prev, { id: uid(), ...input, note: input.note ?? '', createdAt: new Date().toISOString() }])
   }, [])
 
-  // Add multiple entries at once (bulk schedule)
   const addEntries = useCallback((inputs: ScheduleInput[]) => {
     const now = new Date().toISOString()
     setEntries(prev => [
       ...prev,
-      ...inputs.map(inp => ({ id: uid(), ...inp, createdAt: now })),
+      ...inputs.map(inp => ({ id: uid(), ...inp, note: inp.note ?? '', createdAt: now })),
     ])
+  }, [])
+
+  // Replace all entries for given dates, then add new ones
+  const overwriteEntries = useCallback((inputs: ScheduleInput[], dates: string[]) => {
+    const now = new Date().toISOString()
+    const dateSet = new Set(dates)
+    setEntries(prev => {
+      const kept = prev.filter(e => !dateSet.has(e.date))
+      const added = inputs.map(inp => ({ id: uid(), ...inp, note: inp.note ?? '', createdAt: now }))
+      return [...kept, ...added]
+    })
   }, [])
 
   const updateEntry = useCallback((id: string, input: ScheduleInput) => {
@@ -51,9 +67,6 @@ export function useSchedule() {
 
   const resetEntries = useCallback(() => setEntries([]), [])
 
-  // Compute OU-change alerts:
-  // An alert fires when the scheduled branchId ≠ the employee's currently active assignment branch.
-  // We read assignments fresh so we always reflect current state.
   const alerts = useMemo((): ScheduleAlert[] => {
     const assignments = storage.get<{ employeeId: string; branchId: string; toDate: string | null; fromDate: string }[]>(
       'assignments', [],
@@ -66,19 +79,19 @@ export function useSchedule() {
     }
 
     const today = new Date().toISOString().slice(0, 10)
-    // Only future (or today) entries
     return entries
-      .filter(e => e.date >= today)
+      .filter(e => e.date >= today && (e.cellType === 'branch' || !e.cellType) && !!e.branchId)
       .flatMap((entry): ScheduleAlert[] => {
         const curBranch = currentBranch(entry.employeeId)
         if (curBranch === null || curBranch === entry.branchId) return []
-        return [{ entry, currentBranchId: curBranch, scheduledBranchId: entry.branchId }]
+        return [{ entry, currentBranchId: curBranch, scheduledBranchId: entry.branchId! }]
       })
       .sort((a, b) => a.entry.date.localeCompare(b.entry.date))
   }, [entries])
 
   return {
     employees, branches, entries,
-    alerts, addEntry, addEntries, updateEntry, deleteEntry, resetEntries,
+    alerts, addEntry, addEntries, overwriteEntries,
+    updateEntry, deleteEntry, resetEntries,
   }
 }

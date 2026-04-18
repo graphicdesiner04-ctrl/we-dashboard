@@ -38,11 +38,13 @@ const TITLES_EN: Record<string, string> = {
 
 const ROLE_AR: Record<string, string> = {
   Senior:     'سينيور دعم فني',
+  Super:      'سوبر دعم فني',
   Supervisor: 'مشرف الدعم الفني',
   Admin:      'مدير النظام',
 }
 const ROLE_EN: Record<string, string> = {
   Senior:     'Technical Support Senior',
+  Super:      'Super Technical Support',
   Supervisor: 'Technical Support Supervisor',
   Admin:      'System Admin',
 }

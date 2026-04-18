@@ -1,9 +1,17 @@
 import { NavLink } from 'react-router-dom'
 import {
-  Clock, Calendar, HeartPulse, CalendarOff, Repeat2, Upload, Server, ArrowLeft,
+  Clock, Calendar, HeartPulse, Repeat2, CalendarOff, Upload,
+  Server, ArrowLeft, CalendarDays, Users, GitBranch,
 } from 'lucide-react'
 
 const ACTIVE_MODULES = [
+  {
+    path: '/schedule',
+    icon: CalendarDays,
+    label: 'الجدول',
+    desc: 'جدول الحضور والتواجد الشهري للموظفين',
+    color: '#6B21A8',
+  },
   {
     path: '/permissions',
     icon: Clock,
@@ -19,19 +27,51 @@ const ACTIVE_MODULES = [
     color: '#6B21A8',
   },
   {
+    path: '/sick-leave',
+    icon: HeartPulse,
+    label: 'الإجازة المرضية',
+    desc: 'تسجيل ومتابعة الإجازات المرضية',
+    color: '#6B21A8',
+  },
+  {
+    path: '/instead-of',
+    icon: Repeat2,
+    label: 'بدلاً من',
+    desc: 'عمل في إجازة رسمية · متابعة أيام البدل المستحقة',
+    color: '#6B21A8',
+  },
+  {
+    path: '/day-off',
+    icon: CalendarOff,
+    label: 'عمل يوم الإجازة',
+    desc: 'تغطية طارئة · تصدير شيت الشركة في نهاية الشهر',
+    color: '#6B21A8',
+  },
+  {
     path: '/branch-technical',
     icon: Server,
     label: 'البنية التقنية للفروع',
     desc: 'بيانات الشبكة والأجهزة والبنية التحتية لكل فرع',
     color: '#6B21A8',
   },
+  {
+    path: '/employees',
+    icon: Users,
+    label: 'الموظفون',
+    desc: 'إدارة بيانات الموظفين وأكواد العمل',
+    color: '#6B21A8',
+  },
+  {
+    path: '/branches',
+    icon: GitBranch,
+    label: 'الفروع والتكليفات',
+    desc: 'إدارة الفروع وتاريخ تكليفات الموظفين',
+    color: '#6B21A8',
+  },
 ]
 
 const COMING_MODULES = [
-  { icon: HeartPulse,  label: 'الإجازة المرضية',  desc: 'تسجيل ومتابعة الإجازات المرضية' },
-  { icon: CalendarOff, label: 'العمل في الإجازة', desc: 'تسجيل أيام العمل خلال الإجازات' },
-  { icon: Repeat2,     label: 'بدلاً من',         desc: 'إدارة أيام العمل البديلة' },
-  { icon: Upload,      label: 'مركز الرفع',       desc: 'رفع الملفات والتقارير' },
+  { icon: Upload, label: 'مركز الرفع', desc: 'رفع الملفات والتقارير' },
 ]
 
 export default function OverviewPage() {
@@ -82,7 +122,7 @@ export default function OverviewPage() {
         </div>
       </section>
 
-      {/* Coming soon modules */}
+      {/* Coming soon */}
       <section className="mb-8">
         <h2 className="text-xs font-bold text-tertiary uppercase tracking-widest mb-3">
           قريباً

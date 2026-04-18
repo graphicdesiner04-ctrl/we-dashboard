@@ -75,6 +75,8 @@ export interface PermissionRecord {
   employeeId: string
   branchId: string
   date: string            // YYYY-MM-DD
+  fromTime?: string       // HH:MM (optional)
+  toTime?: string         // HH:MM (optional)
   hours: number
   minutes: number
   decimalHours: number
@@ -159,27 +161,31 @@ export interface InsteadOfRecord {
   employeeId: string
   branchId?: string            // where they worked (optional — not always recorded)
   date: string                 // YYYY-MM-DD (the holiday / day off they worked)
-  compensatoryDate?: string    // YYYY-MM-DD (the compensatory day given back)
+  replacementDate?: string     // YYYY-MM-DD (the replacement day taken in return)
   note: string
   createdAt: string
 }
 
 // ── Schedule ──────────────────────────────────────────────────────────────
-// One entry = one employee assigned to one branch on one calendar date.
-// Alert fires when scheduledBranchId ≠ employee's current assignment branch.
+// One entry = one cell in the schedule matrix (employee × date).
+export type ScheduleCellType = 'branch' | 'off' | 'annual' | 'sick' | 'visit' | 'note' | 'empty'
+
 export interface ScheduleEntry {
   id: string
   employeeId: string
-  branchId: string
-  date: string          // YYYY-MM-DD
+  branchId?: string       // required for 'branch' / 'visit'
+  date: string            // YYYY-MM-DD
+  cellType: ScheduleCellType
+  startTime?: string      // HH:MM
+  endTime?: string        // HH:MM
   note: string
   createdAt: string
 }
 
 export interface ScheduleAlert {
   entry: ScheduleEntry
-  currentBranchId: string | null   // from active assignment
-  scheduledBranchId: string        // from this entry
+  currentBranchId: string | null
+  scheduledBranchId: string
 }
 
 // ── Branch Asset Inventory ────────────────────────────────────────────────
@@ -190,4 +196,31 @@ export interface BranchAsset {
   assetType: string   // 'Router' | 'Switch' | 'UPS' | 'Printer' | etc.
   serial: string
   model: string
+}
+
+// ── Change OU ─────────────────────────────────────────────────────────────
+// Formal OU transfer records — TEData format sent to HR system.
+export interface ChangeOURecord {
+  id: string
+  userAccount: string      // domain account e.g. Ahmed.Zaref
+  accountName: string      // full name
+  email: string
+  mobile: string
+  idNumber: string
+  roleName: string         // e.g. 'Retail Technical Specialist'
+  oldOU: string            // old branch display name
+  newOU: string            // new branch display name
+  oldOUCode: string        // OU code e.g. wS09Bi010921
+  newOUCode: string
+  cashBoxClosed: string    // usually "we don't have cash box"
+  directManager: string
+  managerEmail: string
+  division: string
+  department: string       // الادارة
+  generalDept: string      // الادارة العامة
+  sector: string           // القطاع
+  affiliation: string      // التابعية
+  employeeNumber: string   // رقم العامل
+  note: string
+  createdAt: string
 }

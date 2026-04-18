@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Clock, Calendar, HeartPulse,
-  CalendarOff, Repeat2, Upload, Server,
+  Repeat2, CalendarOff, Upload, Server,
   Users, GitBranch, CalendarDays,
   ChevronLeft, ChevronRight, X, LogOut,
 } from 'lucide-react'
@@ -20,7 +20,7 @@ const MAIN_NAV = [
   { path: '/annual-leave',     icon: Calendar,        labelAr: 'الإجازة السنوية',    labelEn: 'Annual Leave'           },
   { path: '/sick-leave',       icon: HeartPulse,      labelAr: 'الإجازة المرضية',    labelEn: 'Sick Leave'             },
   { path: '/instead-of',       icon: Repeat2,         labelAr: 'بدلاً من',           labelEn: 'Instead Of'             },
-  { path: '/day-off',          icon: CalendarOff,     labelAr: 'العمل في الإجازة',   labelEn: 'Working on Day Off'     },
+  { path: '/day-off',          icon: CalendarOff,     labelAr: 'عمل يوم الإجازة',   labelEn: 'Working in Day Off'     },
   { path: '/branch-technical', icon: Server,          labelAr: 'البنية التقنية',     labelEn: 'Technical Infra'        },
   { path: '/employees',        icon: Users,           labelAr: 'الموظفون',           labelEn: 'Employees'              },
   { path: '/branches',         icon: GitBranch,       labelAr: 'الفروع والتكليفات',  labelEn: 'Branches & Assignments' },

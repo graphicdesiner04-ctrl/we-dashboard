@@ -1,6 +1,6 @@
 // ── WE Technical Support Dashboard — Auth Types ──────────────────────────
 
-export type UserRole = 'Senior' | 'Supervisor' | 'Admin'
+export type UserRole = 'Senior' | 'Super' | 'Supervisor' | 'Admin'
 
 export interface UserAccount {
   id: string

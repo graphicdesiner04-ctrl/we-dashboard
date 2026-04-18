@@ -1,12 +1,17 @@
 import { useState } from 'react'
-import { Repeat2, Plus, Save, X, Trash2, Pencil, Gift, Clock } from 'lucide-react'
-import { useInsteadOf } from '@/hooks/useInsteadOf'
-import { useLanguage }  from '@/context/LanguageContext'
-import { getEmpName }   from '@/data/seedData'
+import {
+  Repeat2, Plus, Save, X, Pencil, Trash2,
+  CheckCircle2, Clock, CalendarCheck,
+} from 'lucide-react'
+import { useInsteadOf }  from '@/hooks/useInsteadOf'
+import { useLanguage }   from '@/context/LanguageContext'
+import { getEmpName }    from '@/data/seedData'
 import type { InsteadOfRecord } from '@/types/hr'
 import type { InsteadOfInput }  from '@/hooks/useInsteadOf'
 
-const WE = '#6B21A8'
+const WE    = '#6B21A8'
+const GREEN = '#16A34A'
+const AMBER = '#D97706'
 
 function todayStr() { return new Date().toISOString().slice(0, 10) }
 
@@ -16,24 +21,31 @@ function fmtDate(d: string) {
   })
 }
 
-// ── KPI ───────────────────────────────────────────────────────────────────
+// ── KPI cards ─────────────────────────────────────────────────────────────
 
 function KPICards({ kpi }: { kpi: ReturnType<typeof useInsteadOf>['kpi'] }) {
-  const cards = [
-    { label: 'أيام عمل في الإجازة', value: kpi.totalRecords,  sub: 'إجمالي هذه السنة', color: WE },
-    { label: 'موظفون اشتغلوا',       value: kpi.uniqueWorkers, sub: 'موظف',             color: '#0EA5E9' },
-    { label: 'أيام مستحقة (لم تُعطَ)', value: kpi.totalOwed,  sub: 'يوم متبقي',        color: '#F59E0B' },
-    { label: 'أيام بدل أُعطيت',       value: kpi.totalGiven,  sub: 'يوم بدل',          color: '#10B981' },
-  ]
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      {cards.map(c => (
-        <div key={c.label} className="card p-4">
-          <p className="text-xs text-secondary mb-1">{c.label}</p>
-          <p className="text-2xl font-black num" style={{ color: c.color }}>{c.value}</p>
-          <p className="text-xs text-tertiary mt-0.5">{c.sub}</p>
-        </div>
-      ))}
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="card p-4">
+        <p className="text-xs text-secondary mb-1">إجمالي الأيام</p>
+        <p className="text-2xl font-black num" style={{ color: WE }}>{kpi.totalRecords}</p>
+        <p className="text-xs text-tertiary mt-0.5">يوم عمل في إجازة</p>
+      </div>
+      <div className="card p-4">
+        <p className="text-xs text-secondary mb-1">موظفون</p>
+        <p className="text-2xl font-black num" style={{ color: WE }}>{kpi.uniqueWorkers}</p>
+        <p className="text-xs text-tertiary mt-0.5">عملوا في إجازتهم</p>
+      </div>
+      <div className="card p-4">
+        <p className="text-xs text-secondary mb-1">أيام مستحقة</p>
+        <p className="text-2xl font-black num" style={{ color: AMBER }}>{kpi.totalOwed}</p>
+        <p className="text-xs text-tertiary mt-0.5">لم يُؤخذ البدل بعد</p>
+      </div>
+      <div className="card p-4">
+        <p className="text-xs text-secondary mb-1">أيام أُخذت</p>
+        <p className="text-2xl font-black num" style={{ color: GREEN }}>{kpi.totalGiven}</p>
+        <p className="text-xs text-tertiary mt-0.5">تم استخدام البدل</p>
+      </div>
     </div>
   )
 }
@@ -50,17 +62,17 @@ function InsteadOfForm({
   onCancel:  () => void
 }) {
   const { lang } = useLanguage()
-  const [employeeId,        setEmployeeId]        = useState(editing?.employeeId        ?? '')
-  const [branchId,          setBranchId]          = useState(editing?.branchId          ?? '')
-  const [date,              setDate]              = useState(editing?.date              ?? todayStr())
-  const [compensatoryDate,  setCompensatoryDate]  = useState(editing?.compensatoryDate  ?? '')
-  const [note,              setNote]              = useState(editing?.note              ?? '')
+  const [employeeId,      setEmployeeId]      = useState(editing?.employeeId      ?? '')
+  const [branchId,        setBranchId]        = useState(editing?.branchId        ?? '')
+  const [date,            setDate]            = useState(editing?.date            ?? todayStr())
+  const [replacementDate, setReplacementDate] = useState(editing?.replacementDate ?? '')
+  const [note,            setNote]            = useState(editing?.note            ?? '')
 
   const isEdit = !!editing
 
   function reset() {
     setEmployeeId(''); setBranchId(''); setDate(todayStr())
-    setCompensatoryDate(''); setNote('')
+    setReplacementDate(''); setNote('')
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -68,9 +80,9 @@ function InsteadOfForm({
     if (!employeeId || !date) return
     onSubmit({
       employeeId,
-      branchId:         branchId || undefined,
+      branchId:        branchId        || undefined,
       date,
-      compensatoryDate: compensatoryDate || undefined,
+      replacementDate: replacementDate || undefined,
       note,
     })
     if (!isEdit) reset()
@@ -84,7 +96,7 @@ function InsteadOfForm({
             <Repeat2 size={15} style={{ color: WE }} />
           </div>
           <h3 className="text-sm font-bold text-primary">
-            {isEdit ? 'تعديل السجل' : 'تسجيل يوم عمل في الإجازة'}
+            {isEdit ? 'تعديل السجل' : 'تسجيل يوم عمل في إجازة'}
           </h3>
         </div>
         {isEdit && (
@@ -96,7 +108,7 @@ function InsteadOfForm({
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-3">
-        {/* Employee */}
+
         <div>
           <label className="block text-xs font-bold text-secondary mb-1">
             الموظف <span className="text-red-500">*</span>
@@ -109,7 +121,6 @@ function InsteadOfForm({
           </select>
         </div>
 
-        {/* Date worked */}
         <div>
           <label className="block text-xs font-bold text-secondary mb-1">
             تاريخ العمل في الإجازة <span className="text-red-500">*</span>
@@ -117,13 +128,10 @@ function InsteadOfForm({
           <input type="date" value={date} onChange={e => setDate(e.target.value)} className="we-input" required />
         </div>
 
-        {/* Branch (optional) */}
         <div>
-          <label className="block text-xs font-bold text-secondary mb-1">
-            الفرع <span className="text-tertiary font-normal">(اختياري)</span>
-          </label>
+          <label className="block text-xs font-bold text-secondary mb-1">الفرع (اختياري)</label>
           <select value={branchId} onChange={e => setBranchId(e.target.value)} className="we-input">
-            <option value="">— بدون تحديد فرع —</option>
+            <option value="">— غير محدد —</option>
             {branches.map(b => (
               <option key={b.id} value={b.id}>
                 {lang === 'ar' ? (b.storeNameAr || b.storeName) : b.storeName}
@@ -132,27 +140,25 @@ function InsteadOfForm({
           </select>
         </div>
 
-        {/* Compensatory date (optional) */}
         <div>
           <label className="block text-xs font-bold text-secondary mb-1">
             <span className="flex items-center gap-1.5">
-              <Gift size={11} style={{ color: '#10B981' }} />
-              تاريخ يوم البدل <span className="text-tertiary font-normal">(اختياري — إن أُعطي)</span>
+              <CalendarCheck size={11} style={{ color: GREEN }} />
+              يوم البدل (اختياري)
             </span>
           </label>
           <input
-            type="date"
-            value={compensatoryDate}
-            onChange={e => setCompensatoryDate(e.target.value)}
+            type="date" value={replacementDate}
+            onChange={e => setReplacementDate(e.target.value)}
             className="we-input"
           />
+          <p className="text-[10px] text-tertiary mt-1">اتركه فارغاً إذا لم يُؤخذ بعد</p>
         </div>
 
-        {/* Note */}
         <div>
           <label className="block text-xs font-bold text-secondary mb-1">ملاحظة</label>
           <input value={note} onChange={e => setNote(e.target.value)}
-            placeholder="سبب العمل، مناسبة..." className="we-input" maxLength={200} />
+            placeholder="سبب العمل في الإجازة..." className="we-input" maxLength={200} />
         </div>
 
         <button type="submit"
@@ -166,9 +172,9 @@ function InsteadOfForm({
   )
 }
 
-// ── Table ─────────────────────────────────────────────────────────────────
+// ── Records table ─────────────────────────────────────────────────────────
 
-function InsteadOfTable({
+function RecordsTable({
   records, employees, branches, onEdit, onDelete,
 }: {
   records:   InsteadOfRecord[]
@@ -186,7 +192,7 @@ function InsteadOfTable({
       <div className="card p-12 flex flex-col items-center gap-3 text-center">
         <Repeat2 size={38} className="text-tertiary" strokeWidth={1.4} />
         <p className="text-secondary font-semibold text-sm">لا توجد سجلات</p>
-        <p className="text-tertiary text-xs">ابدأ بتسجيل أول يوم عمل في الإجازة</p>
+        <p className="text-tertiary text-xs">ابدأ بإضافة أول سجل من النموذج</p>
       </div>
     )
   }
@@ -197,25 +203,39 @@ function InsteadOfTable({
       <div className="block md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
         {records.map(rec => {
           const emp    = empMap[rec.employeeId]
-          const branch = rec.branchId ? branchMap[rec.branchId] : undefined
-          const given  = !!rec.compensatoryDate
+          const branch = rec.branchId ? branchMap[rec.branchId] : null
+          const used   = !!rec.replacementDate
           return (
             <div key={rec.id} className="p-4">
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <span className="font-bold text-primary text-sm">{emp ? getEmpName(emp) : '—'}</span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${given ? 'text-emerald-500' : 'text-amber-500'}`}
-                  style={{ background: given ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)' }}>
-                  {given ? 'أُعطي البدل' : 'مستحق'}
-                </span>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div>
+                  <p className="font-bold text-primary text-sm">{emp ? getEmpName(emp) : '—'}</p>
+                  <p className="text-xs text-secondary num mt-0.5">{fmtDate(rec.date)}</p>
+                  {branch && (
+                    <p className="text-xs text-tertiary">
+                      {lang === 'ar' ? (branch.storeNameAr || branch.storeName) : branch.storeName}
+                    </p>
+                  )}
+                </div>
+                {used ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                    style={{ background: `${GREEN}15`, color: GREEN }}>
+                    <CheckCircle2 size={10} /> تم الاستخدام
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                    style={{ background: `${AMBER}15`, color: AMBER }}>
+                    <Clock size={10} /> مستحق
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-secondary">{fmtDate(rec.date)}</p>
-              {branch && <p className="text-xs text-tertiary">{lang === 'ar' ? (branch.storeNameAr || branch.storeName) : branch.storeName}</p>}
-              {rec.compensatoryDate && (
-                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: '#10B981' }}>
-                  <Gift size={10} />يوم البدل: {fmtDate(rec.compensatoryDate)}
+              {rec.replacementDate && (
+                <p className="text-xs mb-1">
+                  <span className="text-tertiary">يوم البدل: </span>
+                  <span className="num font-semibold" style={{ color: GREEN }}>{fmtDate(rec.replacementDate)}</span>
                 </p>
               )}
-              {rec.note && <p className="text-xs text-tertiary italic mt-1 truncate">{rec.note}</p>}
+              {rec.note && <p className="text-xs text-tertiary italic truncate">{rec.note}</p>}
               <div className="flex gap-2 mt-3">
                 <button onClick={() => onEdit(rec)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
@@ -235,7 +255,7 @@ function InsteadOfTable({
 
       {/* Desktop */}
       <div className="hidden md:block table-scroll">
-        <table className="we-table w-full min-w-[750px]">
+        <table className="we-table w-full min-w-[680px]">
           <thead>
             <tr>
               <th className="text-right">الموظف</th>
@@ -250,47 +270,57 @@ function InsteadOfTable({
           <tbody>
             {records.map(rec => {
               const emp    = empMap[rec.employeeId]
-              const branch = rec.branchId ? branchMap[rec.branchId] : undefined
-              const given  = !!rec.compensatoryDate
+              const branch = rec.branchId ? branchMap[rec.branchId] : null
+              const used   = !!rec.replacementDate
               return (
                 <tr key={rec.id}>
-                  <td><span className="font-semibold text-primary text-sm">{emp ? getEmpName(emp) : '—'}</span></td>
-                  <td><span className="num text-xs text-secondary">{fmtDate(rec.date)}</span></td>
+                  <td>
+                    <span className="font-semibold text-primary text-sm">{emp ? getEmpName(emp) : '—'}</span>
+                  </td>
+                  <td>
+                    <span className="num text-xs text-secondary">{fmtDate(rec.date)}</span>
+                  </td>
                   <td>
                     <span className="text-xs text-secondary">
-                      {branch ? (lang === 'ar' ? (branch.storeNameAr || branch.storeName) : branch.storeName) : '—'}
+                      {branch
+                        ? (lang === 'ar' ? (branch.storeNameAr || branch.storeName) : branch.storeName)
+                        : '—'}
                     </span>
                   </td>
                   <td>
-                    {rec.compensatoryDate ? (
-                      <span className="num text-xs flex items-center gap-1" style={{ color: '#10B981' }}>
-                        <Gift size={10} />{fmtDate(rec.compensatoryDate)}
+                    {rec.replacementDate
+                      ? <span className="num text-xs font-semibold" style={{ color: GREEN }}>{fmtDate(rec.replacementDate)}</span>
+                      : <span className="text-xs text-tertiary">—</span>
+                    }
+                  </td>
+                  <td>
+                    {used ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ background: `${GREEN}15`, color: GREEN }}>
+                        <CheckCircle2 size={10} /> تم الاستخدام
                       </span>
                     ) : (
-                      <span className="text-xs text-tertiary flex items-center gap-1">
-                        <Clock size={10} />لم يُعطَ بعد
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        style={{ background: `${AMBER}15`, color: AMBER }}>
+                        <Clock size={10} /> مستحق
                       </span>
                     )}
                   </td>
                   <td>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${given ? 'text-emerald-500' : 'text-amber-500'}`}
-                      style={{ background: given ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)' }}>
-                      {given ? 'أُعطي البدل' : 'مستحق'}
-                    </span>
-                  </td>
-                  <td>
                     <span className="text-xs text-tertiary" title={rec.note || undefined}>
-                      {rec.note ? (rec.note.length > 25 ? rec.note.slice(0, 25) + '…' : rec.note) : '—'}
+                      {rec.note ? (rec.note.length > 28 ? rec.note.slice(0, 28) + '…' : rec.note) : '—'}
                     </span>
                   </td>
                   <td>
                     <div className="flex gap-1">
                       <button onClick={() => onEdit(rec)}
-                        className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors" title="تعديل">
+                        className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                        title="تعديل">
                         <Pencil size={13} />
                       </button>
                       <button onClick={() => onDelete(rec.id)}
-                        className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors" title="حذف">
+                        className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        title="حذف">
                         <Trash2 size={13} />
                       </button>
                     </div>
@@ -305,58 +335,19 @@ function InsteadOfTable({
   )
 }
 
-// ── Summary per employee ──────────────────────────────────────────────────
-
-function SummaryTable({ summaries }: { summaries: ReturnType<typeof useInsteadOf>['summaries'] }) {
-  const active = summaries.filter(s => s.workedCount > 0)
-  if (active.length === 0) return null
-
-  return (
-    <div className="card overflow-hidden mb-5">
-      <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-        <h2 className="text-sm font-bold text-primary">ملخص الأيام المستحقة</h2>
-      </div>
-      <div className="table-scroll">
-        <table className="we-table w-full min-w-[480px]">
-          <thead>
-            <tr>
-              <th className="text-right">الموظف</th>
-              <th className="text-right">أيام اشتغل</th>
-              <th className="text-right">بدل أُعطي</th>
-              <th className="text-right">متبقي مستحق</th>
-            </tr>
-          </thead>
-          <tbody>
-            {active.map(s => (
-              <tr key={s.employee.id}>
-                <td><span className="font-semibold text-primary text-sm">{getEmpName(s.employee)}</span></td>
-                <td><span className="num font-bold text-primary">{s.workedCount}</span></td>
-                <td><span className="num" style={{ color: '#10B981' }}>{s.compensatoryGiven}</span></td>
-                <td>
-                  <span className={`num font-bold ${s.remainingOwed > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                    {s.remainingOwed}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function InsteadOfPage() {
-  const { employees, branches, records, summaries, kpi, addRecord, updateRecord, deleteRecord } =
-    useInsteadOf()
+  const {
+    employees, branches, records, currentYearRecords,
+    kpi, addRecord, updateRecord, deleteRecord,
+  } = useInsteadOf()
 
   const [editing, setEditing] = useState<InsteadOfRecord | null>(null)
 
   function handleSubmit(data: InsteadOfInput) {
     if (editing) { updateRecord(editing.id, data); setEditing(null) }
-    else         addRecord(data)
+    else          addRecord(data)
   }
 
   function handleDelete(id: string) {
@@ -367,31 +358,32 @@ export default function InsteadOfPage() {
 
   return (
     <div style={{ direction: 'rtl' }}>
+      {/* Page header */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: 'rgba(107,33,168,0.14)' }}>
+              style={{ background: `${WE}1A` }}>
               <Repeat2 size={16} color={WE} strokeWidth={2} />
             </div>
             <h1 className="text-xl font-black text-primary">بدلاً من</h1>
           </div>
           <p className="text-sm text-secondary">
-            أيام العمل في وقت الإجازة — تتراكم ويُعطى بدلها · سنة {year}
+            عمل في إجازة رسمية · متابعة أيام البدل المستحقة · سنة {year}
           </p>
         </div>
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white flex-shrink-0"
           style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
           <Repeat2 size={12} />
-          <span>{records.length} يوم</span>
+          <span>{currentYearRecords.length} سجل</span>
         </div>
       </div>
 
       <KPICards kpi={kpi} />
 
-      <SummaryTable summaries={summaries} />
-
       <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-5">
+
+        {/* Left: form */}
         <div className="lg:self-start lg:sticky lg:top-[72px]">
           <InsteadOfForm
             employees={employees} branches={branches}
@@ -400,13 +392,16 @@ export default function InsteadOfPage() {
           />
         </div>
 
+        {/* Right: table */}
         <div className="min-w-0">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-bold text-primary">سجل أيام العمل في الإجازة</h2>
+            <h2 className="text-sm font-bold text-primary">سجلات بدلاً من</h2>
             <span className="text-xs text-tertiary">{records.length} سجل إجمالي</span>
           </div>
-          <InsteadOfTable
-            records={records} employees={employees} branches={branches}
+          <RecordsTable
+            records={records}
+            employees={employees}
+            branches={branches}
             onEdit={r => { setEditing(r); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
             onDelete={handleDelete}
           />

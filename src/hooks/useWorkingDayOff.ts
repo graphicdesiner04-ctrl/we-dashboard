@@ -1,29 +1,23 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { Employee, Branch, WorkingDayOffRecord } from '@/types/hr'
-import { EMPLOYEES, BRANCHES, WORKING_DAY_OFF_INITIAL } from '@/data/seedData'
-import { getCurrentBranchId } from '@/hooks/useAssignments'
+import { EMPLOYEES, BRANCHES } from '@/data/seedData'
 import { storage } from '@/lib/storage'
 
 function uid() {
-  return `wd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+  return `wdo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
 }
 
 export type WorkingDayOffInput = {
   employeeId: string
   branchId:   string
-  date:       string   // YYYY-MM-DD
+  date:       string
   note:       string
 }
 
-export interface WorkingDayOffSummary {
-  employee:        Employee
-  currentBranchId: string | null
-  daysCount:       number
-}
-
 export interface WorkingDayOffKPI {
-  totalRecords:  number
-  uniqueWorkers: number
+  totalRecords:   number
+  uniqueWorkers:  number
+  thisMonthCount: number
 }
 
 export function useWorkingDayOff() {
@@ -33,12 +27,11 @@ export function useWorkingDayOff() {
   const [branches] = useState<Branch[]>(
     () => storage.get<Branch[]>('branches', BRANCHES),
   )
-
   const [records, setRecords] = useState<WorkingDayOffRecord[]>(
-    () => storage.get<WorkingDayOffRecord[]>('wd-records', WORKING_DAY_OFF_INITIAL),
+    () => storage.get<WorkingDayOffRecord[]>('wdo-records', []),
   )
 
-  useEffect(() => { storage.set('wd-records', records) }, [records])
+  useEffect(() => { storage.set('wdo-records', records) }, [records])
 
   const addRecord = useCallback((input: WorkingDayOffInput) => {
     setRecords(prev => [{ id: uid(), ...input, createdAt: new Date().toISOString() }, ...prev])
@@ -52,30 +45,23 @@ export function useWorkingDayOff() {
     setRecords(prev => prev.filter(r => r.id !== id))
   }, [])
 
-  const resetRecords = useCallback(() => setRecords([]), [])
+  const year  = new Date().getFullYear().toString()
+  const month = String(new Date().getMonth() + 1).padStart(2, '0')
+  const currentMonthPrefix = `${year}-${month}`
 
-  const year = new Date().getFullYear().toString()
   const currentYearRecords = useMemo(
     () => records.filter(r => r.date.startsWith(year)),
     [records, year],
   )
 
-  const summaries = useMemo((): WorkingDayOffSummary[] =>
-    employees.map(emp => ({
-      employee:        emp,
-      currentBranchId: getCurrentBranchId(emp.id),
-      daysCount:       currentYearRecords.filter(r => r.employeeId === emp.id).length,
-    })),
-    [employees, currentYearRecords],
-  )
-
   const kpi = useMemo((): WorkingDayOffKPI => ({
-    totalRecords:  currentYearRecords.length,
-    uniqueWorkers: new Set(currentYearRecords.map(r => r.employeeId)).size,
-  }), [currentYearRecords])
+    totalRecords:   currentYearRecords.length,
+    uniqueWorkers:  new Set(currentYearRecords.map(r => r.employeeId)).size,
+    thisMonthCount: records.filter(r => r.date.startsWith(currentMonthPrefix)).length,
+  }), [currentYearRecords, records, currentMonthPrefix])
 
   return {
     employees, branches, records, currentYearRecords,
-    summaries, kpi, addRecord, updateRecord, deleteRecord, resetRecords,
+    kpi, addRecord, updateRecord, deleteRecord,
   }
 }

@@ -48,9 +48,9 @@ export const AUTH_ACCOUNTS: UserAccount[] = [
   {
     id: 'usr-06',
     name: 'Mohamed Sholkamy',
-    role: 'Supervisor',
+    role: 'Super',
     username: 'Mohamed.M.Sholkamy',
     password: 'WeData2060',
-    employeeId: undefined,  // no employee record yet — add when sheet is imported
+    employeeId: 'emp-42',
   },
 ]

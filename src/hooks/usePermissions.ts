@@ -20,6 +20,8 @@ export type PermissionInput = {
   employeeId: string
   branchId: string
   date: string
+  fromTime?: string
+  toTime?: string
   hours: number
   minutes: number
   note: string

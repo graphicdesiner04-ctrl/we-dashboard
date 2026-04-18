@@ -27,6 +27,8 @@ export default function PermissionForm({
   const [employeeId, setEmployeeId] = useState('')
   const [branchId,   setBranchId]   = useState('')
   const [date,       setDate]       = useState(todayStr)
+  const [fromTime,   setFromTime]   = useState('')
+  const [toTime,     setToTime]     = useState('')
   const [hours,      setHours]      = useState(0)
   const [minutes,    setMinutes]    = useState(0)
   const [note,       setNote]       = useState('')
@@ -38,6 +40,8 @@ export default function PermissionForm({
       setEmployeeId(editingRecord.employeeId)
       setBranchId(editingRecord.branchId ?? '')
       setDate(editingRecord.date)
+      setFromTime(editingRecord.fromTime ?? '')
+      setToTime(editingRecord.toTime ?? '')
       setHours(editingRecord.hours)
       setMinutes(editingRecord.minutes)
       setNote(editingRecord.note)
@@ -48,6 +52,7 @@ export default function PermissionForm({
 
   function reset() {
     setEmployeeId(''); setBranchId(''); setDate(todayStr())
+    setFromTime(''); setToTime('')
     setHours(0); setMinutes(0); setNote('')
   }
 
@@ -69,7 +74,7 @@ export default function PermissionForm({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!employeeId || !branchId || decimal === 0) return
-    onSubmit({ employeeId, branchId, date, hours, minutes, note })
+    onSubmit({ employeeId, branchId, date, fromTime: fromTime || undefined, toTime: toTime || undefined, hours, minutes, note })
     if (!isEditing) reset()
   }
 
@@ -126,6 +131,18 @@ export default function PermissionForm({
             التاريخ <span className="text-red-500">*</span>
           </label>
           <input type="date" value={date} onChange={e => setDate(e.target.value)} className="we-input" required />
+        </div>
+
+        {/* From / To time (optional) */}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs font-bold text-secondary mb-1">من (اختياري)</label>
+            <input type="time" value={fromTime} onChange={e => setFromTime(e.target.value)} className="we-input" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-secondary mb-1">إلى (اختياري)</label>
+            <input type="time" value={toTime} onChange={e => setToTime(e.target.value)} className="we-input" />
+          </div>
         </div>
 
         {/* Hours + Minutes */}
