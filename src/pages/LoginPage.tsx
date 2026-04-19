@@ -76,7 +76,7 @@ export default function LoginPage() {
               type="text"
               value={username}
               onChange={e => { setUsername(e.target.value); setError('') }}
-              placeholder="Ahmed.G.Hafez"
+              placeholder="Ahmed.H.Bahaa"
               autoComplete="username"
               dir="ltr"
               className="w-full rounded-xl px-4 py-3 text-sm outline-none transition-all"
@@ -155,9 +155,14 @@ export default function LoginPage() {
         </form>
 
         {/* Footer */}
-        <p className="text-center text-[10px]" style={{ color: 'rgba(255,255,255,0.2)' }}>
-          WE Egypt — نظام الدعم الفني
-        </p>
+        <div className="flex flex-col items-center gap-1">
+          <p className="text-center text-[10px]" style={{ color: 'rgba(255,255,255,0.2)' }}>
+            WE Egypt — نظام الدعم الفني
+          </p>
+          <p className="text-center text-[10px] font-semibold" style={{ color: 'rgba(192,132,252,0.45)' }}>
+            تم التصميم بواسطة م.أحمد حسن بهاء
+          </p>
+        </div>
       </div>
     </div>
   )

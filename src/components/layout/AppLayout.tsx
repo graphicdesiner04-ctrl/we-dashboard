@@ -16,6 +16,10 @@ export default function AppLayout() {
         <TopBar onMenuClick={() => setDrawerOpen(true)} />
         <main className="flex-1 p-4 md:p-6 overflow-auto">
           <Outlet />
+          <p className="text-center text-[10px] font-semibold mt-8 pb-2"
+            style={{ color: 'var(--text-tertiary)', opacity: 0.55 }}>
+            تم التصميم بواسطة م.أحمد حسن بهاء
+          </p>
         </main>
       </div>
 
