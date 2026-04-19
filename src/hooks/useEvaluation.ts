@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { EMPLOYEES, BRANCHES } from '@/data/seedData'
+import { EMPLOYEES, BRANCHES, EVAL_SEED_RECORDS } from '@/data/seedData'
 import { storage } from '@/lib/storage'
 import type { Employee, Branch } from '@/types/hr'
 
@@ -36,7 +36,7 @@ export function useEvaluation() {
   )
 
   const [records, setRecords] = useState<EvaluationRecord[]>(
-    () => storage.get<EvaluationRecord[]>('eval-records', []),
+    () => storage.get<EvaluationRecord[]>('eval-records', EVAL_SEED_RECORDS),
   )
 
   useEffect(() => { storage.set('eval-records', records) }, [records])
