@@ -529,6 +529,9 @@ export const INSTEAD_OF_INITIAL: InsteadOfRecord[] = [
 
   // 09-Apr-2026 (from Working in Day Off sheet)
   { id: 'io-seed-012', employeeId: 'emp-21', branchId: 'br-02', date: '2026-04-09', note: 'عمل في يوم الإجازة', createdAt: '2026-04-09T00:00:00.000Z' }, // Mohamed Rabeaa Abd-El Aziz Hussien (236311)
+
+  // 31-Mar-2026 — from Evaluation_Full.xlsx row 44
+  { id: 'io-seed-013', employeeId: 'emp-29', date: '2026-03-31', note: 'Mostafa Abdelkafy ID 217432 Instead off 31-3-2026 only one day remaining', createdAt: '2026-04-19T12:00:00.000Z' }, // Mostafa Abdelkafy (217432)
 ]
 
 // ── Working in Day Off Initial Records ────────────────────────────────────
@@ -540,9 +543,12 @@ export const WORKING_DAY_OFF_INITIAL: WorkingDayOffRecord[] = [
     employeeId: 'emp-21',   // Mohamed.R236311
     branchId:   'br-02',   // Der Mawas
     date:       '2026-04-09',
-    note:       '',
+    note:       'Mohamed Rabiea  236311 Working in day of cover fady at der mawas (09-04-2026)',
     createdAt:  '2026-04-09T00:00:00.000Z',
   },
+  // ── From Evaluation_Full.xlsx (Working in day off rows) ───────────────────
+  { id: 'wd-seed-002', employeeId: 'emp-33', branchId: 'br-05', date: '2026-03-04', note: 'Mahmoud Esmail ID 239015 working in his day off at 4-3-2026 at Menia exchange', createdAt: '2026-04-19T12:00:00.000Z' },
+  { id: 'wd-seed-003', employeeId: 'emp-40', branchId: 'br-01', date: '2026-04-05', note: 'Mohamed Abdelmohsen  163825 Worked in his day off cover fady vacation at mallawy 05/04/2026', createdAt: '2026-04-19T12:00:00.000Z' },
 ]
 
 

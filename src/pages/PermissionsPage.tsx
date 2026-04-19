@@ -4,15 +4,23 @@ import PermissionKPICards from '@/components/hr/PermissionKPICards'
 import PermissionForm     from '@/components/hr/PermissionForm'
 import { usePermissions } from '@/hooks/usePermissions'
 import { getEmpName }     from '@/data/seedData'
-import type { PermissionRecord, EmployeeSummary, Branch } from '@/types/hr'
+import type { PermissionRecord, Branch } from '@/types/hr'
 import type { PermissionInput } from '@/hooks/usePermissions'
 
-const WE = '#6B21A8'
+const WE    = '#6B21A8'
 const LIMIT = 4
+
+// ── Helpers ───────────────────────────────────────────────────────────────
 
 function fmtDate(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })
 }
+
+function monthLabel(key: string) {
+  return new Date(key + '-01T00:00:00').toLocaleString('ar-EG', { month: 'long', year: 'numeric' })
+}
+
+function r2(n: number) { return Math.round(n * 100) / 100 }
 
 // ── Progress bar ──────────────────────────────────────────────────────────
 
@@ -21,73 +29,68 @@ function ProgressBar({ used, limit }: { used: number; limit: number }) {
   const over = used > limit
   return (
     <div className="w-full rounded-full overflow-hidden flex-1" style={{ height: 5, background: 'var(--bg-elevated)' }}>
-      <div
-        style={{
-          width: `${pct}%`, height: '100%',
-          background: over ? '#DC2626' : WE,
-          borderRadius: 9999, transition: 'width 0.3s',
-        }}
-      />
+      <div style={{
+        width: `${pct}%`, height: '100%',
+        background: over ? '#DC2626' : WE,
+        borderRadius: 9999, transition: 'width 0.3s',
+      }} />
     </div>
   )
 }
 
-// ── Employee permission card ──────────────────────────────────────────────
+// ── Employee card inside a month section ──────────────────────────────────
 
-function EmployeeCard({
-  summary, records, branches, onEdit, onDelete,
+function EmpMonthCard({
+  employeeId, monthRecords, employees, branches, onEdit, onDelete,
 }: {
-  summary:  EmployeeSummary
-  records:  PermissionRecord[]
-  branches: Branch[]
+  employeeId:   string
+  monthRecords: PermissionRecord[]
+  employees:    ReturnType<typeof usePermissions>['employees']
+  branches:     Branch[]
   onEdit:   (r: PermissionRecord) => void
   onDelete: (id: string) => void
 }) {
-  const [open, setOpen] = useState(records.length > 0)
-  const { employee, totalDecimalHours, isOverLimit } = summary
+  const [open, setOpen] = useState(false)
+  const employee  = employees.find(e => e.id === employeeId)
   const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
-  const initial   = getEmpName(employee).charAt(0)
+  const monthHours = r2(monthRecords.reduce((s, r) => s + r.decimalHours, 0))
+  const isOverLimit = monthHours > LIMIT
+  const name    = employee ? getEmpName(employee) : employeeId
+  const initial = name.charAt(0)
 
   return (
     <div className="card overflow-hidden">
-      {/* Header row */}
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full px-4 py-3 flex items-center gap-3 text-right hover:bg-white/[0.02] transition-colors"
       >
-        <div
-          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0"
-          style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}
-        >
+        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0"
+          style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
           {initial}
         </div>
 
         <div className="flex-1 min-w-0 text-right">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="font-bold text-primary text-sm">{getEmpName(employee)}</span>
+            <span className="font-bold text-primary text-sm">{name}</span>
             {isOverLimit && (
               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                style={{ background: '#DC262615', color: '#DC2626' }}>
-                تجاوز الحد
-              </span>
+                style={{ background: '#DC262615', color: '#DC2626' }}>تجاوز الحد</span>
             )}
           </div>
           <div className="flex items-center gap-2">
-            <ProgressBar used={totalDecimalHours} limit={LIMIT} />
+            <ProgressBar used={monthHours} limit={LIMIT} />
             <span className="text-xs font-black num flex-shrink-0"
               style={{ color: isOverLimit ? '#DC2626' : WE }}>
-              {totalDecimalHours}/{LIMIT}h
+              {monthHours}/{LIMIT}h
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0 mr-1">
-          {records.length > 0 && (
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-              style={{ background: `${WE}18`, color: WE }}>
-              {records.length}
-            </span>
-          )}
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+            style={{ background: `${WE}18`, color: WE }}>
+            {monthRecords.length}
+          </span>
           {open
             ? <ChevronUp  size={14} className="text-tertiary" />
             : <ChevronDown size={14} className="text-tertiary" />
@@ -95,59 +98,153 @@ function EmployeeCard({
         </div>
       </button>
 
-      {/* Records list */}
       {open && (
-        <div className="border-t" style={{ borderColor: 'var(--border)' }}>
-          {records.length === 0 ? (
-            <p className="px-4 py-3 text-xs text-tertiary text-center">لا توجد أذونات هذا الشهر</p>
-          ) : (
-            <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-              {records.map(rec => {
-                const branch = branchMap[rec.branchId]
-                return (
-                  <div key={rec.id} className="px-4 py-3 flex items-start gap-3">
-                    <div className="flex-1 min-w-0 text-right">
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mb-0.5">
-                        <span className="text-xs font-bold text-primary num">{fmtDate(rec.date)}</span>
-                        {rec.fromTime && (
-                          <span className="text-[10px] text-secondary num">
-                            {rec.fromTime}{rec.toTime ? ` ← ${rec.toTime}` : ''}
-                          </span>
-                        )}
-                        <span className="text-[10px] font-black num" style={{ color: WE }}>
-                          {rec.decimalHours}h
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        {branch && (
-                          <span className="text-[10px] text-tertiary">
-                            {branch.storeNameAr || branch.storeName}
-                          </span>
-                        )}
-                        {rec.note && (
-                          <span className="text-[10px] text-tertiary truncate max-w-[180px]" title={rec.note}>
-                            {rec.note}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-0.5 flex-shrink-0 mt-0.5">
-                      <button onClick={() => onEdit(rec)}
-                        className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
-                        title="تعديل">
-                        <Pencil size={12} />
-                      </button>
-                      <button onClick={() => onDelete(rec.id)}
-                        className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                        title="حذف">
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
+        <div className="border-t divide-y" style={{ borderColor: 'var(--border)' }}>
+          {monthRecords.map(rec => {
+            const branch = branchMap[rec.branchId]
+            return (
+              <div key={rec.id} className="px-4 py-3 flex items-start gap-3">
+                <div className="flex-1 min-w-0 text-right">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mb-0.5">
+                    <span className="text-xs font-bold text-primary num">{fmtDate(rec.date)}</span>
+                    {rec.fromTime && (
+                      <span className="text-[10px] text-secondary num">
+                        {rec.fromTime}{rec.toTime ? ` ← ${rec.toTime}` : ''}
+                      </span>
+                    )}
+                    <span className="text-[10px] font-black num" style={{ color: WE }}>
+                      {rec.hours > 0 && rec.minutes > 0
+                        ? `${rec.hours}h ${rec.minutes}m`
+                        : rec.hours > 0
+                          ? `${rec.hours}h`
+                          : `${rec.minutes}m`}
+                    </span>
                   </div>
-                )
-              })}
-            </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    {branch && (
+                      <span className="text-[10px] text-tertiary">
+                        {branch.storeNameAr || branch.storeName}
+                      </span>
+                    )}
+                    {rec.note && (
+                      <span className="text-[10px] text-tertiary truncate max-w-[220px]" title={rec.note}>
+                        {rec.note}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-0.5 flex-shrink-0 mt-0.5">
+                  <button onClick={() => onEdit(rec)}
+                    className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                    title="تعديل">
+                    <Pencil size={12} />
+                  </button>
+                  <button onClick={() => onDelete(rec.id)}
+                    className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                    title="حذف">
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Month section ─────────────────────────────────────────────────────────
+
+function MonthSection({
+  monthKey, records, employees, branches, search, onEdit, onDelete,
+}: {
+  monthKey:  string
+  records:   PermissionRecord[]
+  employees: ReturnType<typeof usePermissions>['employees']
+  branches:  Branch[]
+  search:    string
+  onEdit:    (r: PermissionRecord) => void
+  onDelete:  (id: string) => void
+}) {
+  const currentMonthKey = new Date().toISOString().slice(0, 7)
+  const [open, setOpen] = useState(monthKey === currentMonthKey)
+
+  // group records by employee within this month
+  const byEmp = useMemo(() => {
+    const map = new Map<string, PermissionRecord[]>()
+    for (const rec of records) {
+      const arr = map.get(rec.employeeId) ?? []
+      arr.push(rec)
+      map.set(rec.employeeId, arr)
+    }
+    return [...map.entries()]
+      .map(([empId, recs]) => ({ empId, recs: recs.sort((a, b) => b.date.localeCompare(a.date)) }))
+      .filter(({ empId }) => {
+        if (!search.trim()) return true
+        const emp = employees.find(e => e.id === empId)
+        return emp ? getEmpName(emp).toLowerCase().includes(search.toLowerCase()) : false
+      })
+      .sort((a, b) => {
+        const ah = r2(a.recs.reduce((s, r) => s + r.decimalHours, 0))
+        const bh = r2(b.recs.reduce((s, r) => s + r.decimalHours, 0))
+        return bh - ah
+      })
+  }, [records, employees, search])
+
+  const totalHours = r2(records.reduce((s, r) => s + r.decimalHours, 0))
+  const isCurrentMonth = monthKey === currentMonthKey
+  const label = monthLabel(monthKey)
+
+  return (
+    <div className="card overflow-hidden mb-4">
+      {/* Month header */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full px-4 py-3.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors"
+      >
+        <div className="flex-1 flex items-center gap-3 flex-wrap text-right">
+          <span className="font-black text-sm text-primary">{label}</span>
+          {isCurrentMonth && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white"
+              style={{ background: WE }}>
+              الشهر الحالي
+            </span>
           )}
+          <div className="flex items-center gap-2 mr-auto">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: `${WE}15`, color: WE }}>
+              {records.length} سجل
+            </span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(16,185,129,0.12)', color: '#10B981' }}>
+              {totalHours}h
+            </span>
+          </div>
+        </div>
+        {open
+          ? <ChevronUp  size={15} className="text-tertiary flex-shrink-0" />
+          : <ChevronDown size={15} className="text-tertiary flex-shrink-0" />
+        }
+      </button>
+
+      {/* Employee sub-cards */}
+      {open && (
+        <div className="border-t px-3 py-3 grid grid-cols-1 xl:grid-cols-2 gap-3"
+          style={{ borderColor: 'var(--border)' }}>
+          {byEmp.length === 0 ? (
+            <p className="text-xs text-tertiary text-center py-4 col-span-2">لا توجد نتائج</p>
+          ) : byEmp.map(({ empId, recs }) => (
+            <EmpMonthCard
+              key={empId}
+              employeeId={empId}
+              monthRecords={recs}
+              employees={employees}
+              branches={branches}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -185,33 +282,20 @@ export default function PermissionsPage() {
     }
   }
 
-  const month = new Date().toLocaleString('ar-EG', { month: 'long', year: 'numeric' })
-
-  // Per-employee records map (current month only)
-  const empRecords = useMemo(() => {
-    const map: Record<string, PermissionRecord[]> = {}
-    for (const emp of employees) {
-      map[emp.id] = currentMonthRecords.filter(r => r.employeeId === emp.id)
+  // Group ALL records by month, newest first
+  const monthBuckets = useMemo(() => {
+    const map = new Map<string, PermissionRecord[]>()
+    for (const rec of records) {
+      const key = rec.date.slice(0, 7)
+      const arr = map.get(key) ?? []
+      arr.push(rec)
+      map.set(key, arr)
     }
-    return map
-  }, [employees, currentMonthRecords])
+    return [...map.entries()]
+      .sort((a, b) => b[0].localeCompare(a[0]))
+  }, [records])
 
-  // Filter summaries by search
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return summaries
-    return summaries.filter(s => getEmpName(s.employee).toLowerCase().includes(q))
-  }, [summaries, search])
-
-  // Sort: employees with records first
-  const sorted = useMemo(
-    () => [...filtered].sort((a, b) => {
-      const ar = empRecords[a.employee.id]?.length ?? 0
-      const br = empRecords[b.employee.id]?.length ?? 0
-      return br - ar
-    }),
-    [filtered, empRecords],
-  )
+  const month = new Date().toLocaleString('ar-EG', { month: 'long', year: 'numeric' })
 
   return (
     <div style={{ direction: 'rtl' }}>
@@ -267,7 +351,7 @@ export default function PermissionsPage() {
           </div>
         </div>
 
-        {/* Right: employee cards */}
+        {/* Right: monthly sections */}
         <div className="min-w-0">
           {/* Search */}
           <div className="relative mb-4">
@@ -276,28 +360,46 @@ export default function PermissionsPage() {
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="بحث عن موظف..."
+              placeholder="بحث عن موظف في كل الشهور..."
               className="we-input pr-9 w-full"
             />
           </div>
 
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-bold text-primary">الموظفون · {month}</h2>
-            <span className="text-xs text-tertiary">{filtered.length} موظف</span>
+          {/* Stats row */}
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-primary">السجلات حسب الشهر</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{ background: `${WE}15`, color: WE }}>
+                {records.length} سجل إجمالي
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(16,185,129,0.12)', color: '#10B981' }}>
+                {currentMonthRecords.length} هذا الشهر
+              </span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-            {sorted.map(summary => (
-              <EmployeeCard
-                key={summary.employee.id}
-                summary={summary}
-                records={empRecords[summary.employee.id] ?? []}
+          {monthBuckets.length === 0 ? (
+            <div className="card p-12 flex flex-col items-center gap-3 text-center">
+              <Clock size={38} className="text-tertiary" strokeWidth={1.4} />
+              <p className="text-secondary font-semibold text-sm">لا توجد سجلات أذونات</p>
+              <p className="text-tertiary text-xs">ابدأ بتسجيل أول إذن من النموذج</p>
+            </div>
+          ) : (
+            monthBuckets.map(([key, recs]) => (
+              <MonthSection
+                key={key}
+                monthKey={key}
+                records={recs}
+                employees={employees}
                 branches={branches}
+                search={search}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
               />
-            ))}
-          </div>
+            ))
+          )}
         </div>
       </div>
     </div>

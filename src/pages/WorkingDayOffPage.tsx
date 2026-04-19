@@ -2,10 +2,10 @@
 // Emergency coverage: employee covers for an absent colleague.
 // At month end → export Excel sheet to company for financial compensation.
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import {
-  CalendarOff, Plus, Save, X, Pencil, Trash2, Download,
+  CalendarOff, Plus, Save, X, Pencil, Trash2, Download, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { useWorkingDayOff }   from '@/hooks/useWorkingDayOff'
 import { useLanguage }         from '@/context/LanguageContext'
@@ -13,9 +13,9 @@ import { getEmpName }          from '@/data/seedData'
 import type { WorkingDayOffRecord } from '@/types/hr'
 import type { WorkingDayOffInput }  from '@/hooks/useWorkingDayOff'
 
-const WE     = '#6B21A8'
-const GREEN  = '#16A34A'
-const AMBER  = '#D97706'
+const WE    = '#6B21A8'
+const GREEN = '#16A34A'
+const AMBER = '#D97706'
 
 function todayStr() { return new Date().toISOString().slice(0, 10) }
 
@@ -28,6 +28,10 @@ function fmtDate(d: string) {
 function fmtDateShort(d: string) {
   const dt = new Date(d + 'T00:00:00')
   return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`
+}
+
+function monthLabel(key: string) {
+  return new Date(key + '-01T00:00:00').toLocaleString('ar-EG', { month: 'long', year: 'numeric' })
 }
 
 // ── Month options ─────────────────────────────────────────────────────────
@@ -158,7 +162,7 @@ function DayOffForm({
         <div>
           <label className="block text-xs font-bold text-secondary mb-1">السبب / ملاحظة</label>
           <input value={note} onChange={e => setNote(e.target.value)}
-            placeholder="سبب التغطية أو ملاحظة..." className="we-input" maxLength={200} />
+            placeholder="سبب التغطية أو ملاحظة..." className="we-input" maxLength={300} />
         </div>
 
         <button type="submit"
@@ -191,7 +195,6 @@ function ExportPanel({
     const filtered = records.filter(r => r.date.startsWith(exportMonth))
     if (!filtered.length) { alert('لا توجد سجلات في هذا الشهر'); return }
 
-    // Group by employee
     const grouped: Record<string, WorkingDayOffRecord[]> = {}
     filtered.forEach(r => {
       if (!grouped[r.employeeId]) grouped[r.employeeId] = []
@@ -223,10 +226,9 @@ function ExportPanel({
     const ws = XLSX.utils.json_to_sheet(rows)
     ws['!cols'] = [
       { wch: 22 }, { wch: 28 }, { wch: 16 },
-      { wch: 32 }, { wch: 12 }, { wch: 24 }, { wch: 36 },
+      { wch: 32 }, { wch: 12 }, { wch: 24 }, { wch: 42 },
     ]
     XLSX.utils.book_append_sheet(wb, ws, 'Working in Day Off')
-
     const opt = monthOpts.find(o => o.value === exportMonth)
     XLSX.writeFile(wb, `Working in day off - ${opt?.labelEn ?? exportMonth}.xlsx`)
   }
@@ -248,11 +250,12 @@ function ExportPanel({
   )
 }
 
-// ── Records table ─────────────────────────────────────────────────────────
+// ── Month section ─────────────────────────────────────────────────────────
 
-function RecordsTable({
-  records, employees, branches, onEdit, onDelete,
+function MonthSection({
+  monthKey, records, employees, branches, onEdit, onDelete,
 }: {
+  monthKey:  string
   records:   WorkingDayOffRecord[]
   employees: ReturnType<typeof useWorkingDayOff>['employees']
   branches:  ReturnType<typeof useWorkingDayOff>['branches']
@@ -260,117 +263,154 @@ function RecordsTable({
   onDelete:  (id: string) => void
 }) {
   const { lang } = useLanguage()
-  const empMap    = Object.fromEntries(employees.map(e => [e.id, e]))
-  const branchMap = Object.fromEntries(branches.map(b => [b.id, b]))
+  const currentMonthKey = new Date().toISOString().slice(0, 7)
+  const [open, setOpen] = useState(monthKey === currentMonthKey)
 
-  if (!records.length) {
-    return (
-      <div className="card p-12 flex flex-col items-center gap-3 text-center">
-        <CalendarOff size={38} className="text-tertiary" strokeWidth={1.4} />
-        <p className="text-secondary font-semibold text-sm">لا توجد سجلات تغطية</p>
-        <p className="text-tertiary text-xs">ابدأ بتسجيل أول يوم تغطية من النموذج</p>
-      </div>
-    )
-  }
+  const empMap    = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
+  const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
+
+  const sorted = useMemo(
+    () => [...records].sort((a, b) => b.date.localeCompare(a.date)),
+    [records],
+  )
+
+  const isCurrentMonth = monthKey === currentMonthKey
 
   return (
-    <div className="card overflow-hidden">
-      {/* Mobile */}
-      <div className="block md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
-        {records.map(rec => {
-          const emp    = empMap[rec.employeeId]
-          const branch = branchMap[rec.branchId]
-          return (
-            <div key={rec.id} className="p-4">
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <div>
-                  <p className="font-bold text-primary text-sm">{emp ? getEmpName(emp) : '—'}</p>
-                  <p className="text-xs text-secondary num mt-0.5">{fmtDate(rec.date)}</p>
-                  {branch && (
-                    <p className="text-xs mt-0.5" style={{ color: WE }}>
-                      {lang === 'ar' ? (branch.storeNameAr || branch.storeName) : branch.storeName}
-                    </p>
-                  )}
-                </div>
-              </div>
-              {rec.note && <p className="text-xs text-tertiary italic mt-1">{rec.note}</p>}
-              <div className="flex gap-2 mt-3">
-                <button onClick={() => onEdit(rec)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                  style={{ color: WE, background: `${WE}12` }}>
-                  <Pencil size={12} /> تعديل
-                </button>
-                <button onClick={() => onDelete(rec.id)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                  style={{ color: '#DC2626', background: 'rgba(220,38,38,0.08)' }}>
-                  <Trash2 size={12} /> حذف
-                </button>
-              </div>
-            </div>
-          )
-        })}
-      </div>
+    <div className="card overflow-hidden mb-4">
+      {/* Month header */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full px-4 py-3.5 flex items-center gap-3 hover:bg-white/[0.02] transition-colors"
+      >
+        <div className="flex-1 flex items-center gap-3 flex-wrap text-right">
+          <span className="font-black text-sm text-primary">{monthLabel(monthKey)}</span>
+          {isCurrentMonth && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white"
+              style={{ background: WE }}>الشهر الحالي</span>
+          )}
+          <div className="flex items-center gap-2 mr-auto">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: `${WE}15`, color: WE }}>
+              {records.length} يوم
+            </span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(22,163,74,0.12)', color: GREEN }}>
+              {new Set(records.map(r => r.employeeId)).size} موظف
+            </span>
+          </div>
+        </div>
+        {open
+          ? <ChevronUp  size={15} className="text-tertiary flex-shrink-0" />
+          : <ChevronDown size={15} className="text-tertiary flex-shrink-0" />
+        }
+      </button>
 
-      {/* Desktop */}
-      <div className="hidden md:block table-scroll">
-        <table className="we-table w-full min-w-[600px]">
-          <thead>
-            <tr>
-              <th className="text-right">الموظف</th>
-              <th className="text-right">التاريخ</th>
-              <th className="text-right">الفرع</th>
-              <th className="text-right">السبب / ملاحظة</th>
-              <th className="text-right">إجراءات</th>
-            </tr>
-          </thead>
-          <tbody>
-            {records.map(rec => {
+      {/* Records list */}
+      {open && (
+        <div className="border-t" style={{ borderColor: 'var(--border)' }}>
+          {/* Desktop table */}
+          <div className="hidden md:block table-scroll">
+            <table className="we-table w-full min-w-[580px]">
+              <thead>
+                <tr>
+                  <th className="text-right">الموظف</th>
+                  <th className="text-right">التاريخ</th>
+                  <th className="text-right">الفرع</th>
+                  <th className="text-right">الكومنت / السبب</th>
+                  <th className="text-right">إجراءات</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map(rec => {
+                  const emp    = empMap[rec.employeeId]
+                  const branch = branchMap[rec.branchId]
+                  return (
+                    <tr key={rec.id}>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-black flex-shrink-0"
+                            style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
+                            {emp ? getEmpName(emp).charAt(0) : '?'}
+                          </div>
+                          <span className="font-semibold text-primary text-sm">
+                            {emp ? getEmpName(emp) : '—'}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="num text-xs text-secondary">{fmtDate(rec.date)}</span>
+                      </td>
+                      <td>
+                        <span className="text-xs" style={{ color: WE }}>
+                          {branch
+                            ? (lang === 'ar' ? (branch.storeNameAr || branch.storeName) : branch.storeName)
+                            : '—'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-xs text-tertiary" title={rec.note || undefined}>
+                          {rec.note
+                            ? (rec.note.length > 50 ? rec.note.slice(0, 50) + '…' : rec.note)
+                            : '—'}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="flex gap-1">
+                          <button onClick={() => onEdit(rec)}
+                            className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                            title="تعديل">
+                            <Pencil size={13} />
+                          </button>
+                          <button onClick={() => onDelete(rec.id)}
+                            className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                            title="حذف">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="block md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
+            {sorted.map(rec => {
               const emp    = empMap[rec.employeeId]
               const branch = branchMap[rec.branchId]
               return (
-                <tr key={rec.id}>
-                  <td>
-                    <span className="font-semibold text-primary text-sm">
-                      {emp ? getEmpName(emp) : '—'}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="num text-xs text-secondary">{fmtDate(rec.date)}</span>
-                  </td>
-                  <td>
-                    <span className="text-xs" style={{ color: WE }}>
-                      {branch
-                        ? (lang === 'ar' ? (branch.storeNameAr || branch.storeName) : branch.storeName)
-                        : '—'}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="text-xs text-tertiary" title={rec.note || undefined}>
-                      {rec.note
-                        ? (rec.note.length > 32 ? rec.note.slice(0, 32) + '…' : rec.note)
-                        : '—'}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="flex gap-1">
+                <div key={rec.id} className="p-4">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div>
+                      <p className="font-bold text-primary text-sm">{emp ? getEmpName(emp) : '—'}</p>
+                      <p className="text-xs text-secondary num mt-0.5">{fmtDate(rec.date)}</p>
+                      {branch && (
+                        <p className="text-xs mt-0.5" style={{ color: WE }}>
+                          {lang === 'ar' ? (branch.storeNameAr || branch.storeName) : branch.storeName}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
                       <button onClick={() => onEdit(rec)}
-                        className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
-                        title="تعديل">
+                        className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors">
                         <Pencil size={13} />
                       </button>
                       <button onClick={() => onDelete(rec.id)}
-                        className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                        title="حذف">
+                        className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors">
                         <Trash2 size={13} />
                       </button>
                     </div>
-                  </td>
-                </tr>
+                  </div>
+                  {rec.note && <p className="text-xs text-tertiary">{rec.note}</p>}
+                </div>
               )
             })}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -393,6 +433,18 @@ export default function WorkingDayOffPage() {
   function handleDelete(id: string) {
     if (window.confirm('هل تريد حذف هذا السجل؟')) deleteRecord(id)
   }
+
+  // Group all records by month, newest first
+  const monthBuckets = useMemo(() => {
+    const map = new Map<string, WorkingDayOffRecord[]>()
+    for (const rec of records) {
+      const key = rec.date.slice(0, 7)
+      const arr = map.get(key) ?? []
+      arr.push(rec)
+      map.set(key, arr)
+    }
+    return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]))
+  }, [records])
 
   const year = new Date().getFullYear()
 
@@ -433,22 +485,34 @@ export default function WorkingDayOffPage() {
           />
         </div>
 
-        {/* Right: export + table */}
+        {/* Right: export + monthly sections */}
         <div className="min-w-0">
           <ExportPanel records={records} employees={employees} branches={branches} />
 
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-bold text-primary">سجلات التغطية</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-primary">السجلات حسب الشهر</h2>
             <span className="text-xs text-tertiary">{records.length} سجل إجمالي</span>
           </div>
 
-          <RecordsTable
-            records={records}
-            employees={employees}
-            branches={branches}
-            onEdit={r => { setEditing(r); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-            onDelete={handleDelete}
-          />
+          {monthBuckets.length === 0 ? (
+            <div className="card p-12 flex flex-col items-center gap-3 text-center">
+              <CalendarOff size={38} className="text-tertiary" strokeWidth={1.4} />
+              <p className="text-secondary font-semibold text-sm">لا توجد سجلات تغطية</p>
+              <p className="text-tertiary text-xs">ابدأ بتسجيل أول يوم تغطية من النموذج</p>
+            </div>
+          ) : (
+            monthBuckets.map(([key, recs]) => (
+              <MonthSection
+                key={key}
+                monthKey={key}
+                records={recs}
+                employees={employees}
+                branches={branches}
+                onEdit={r => { setEditing(r); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                onDelete={handleDelete}
+              />
+            ))
+          )}
         </div>
       </div>
     </div>
