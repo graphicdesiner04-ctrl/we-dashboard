@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react'
 import {
   Star, Plus, Save, X, Pencil, Trash2,
-  ThumbsUp, ThumbsDown, ChevronDown, ChevronUp, Search,
+  ThumbsUp, ThumbsDown, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { useEvaluation } from '@/hooks/useEvaluation'
 import { useLanguage }   from '@/context/LanguageContext'
 import { getEmpName }    from '@/data/seedData'
 import type { EvaluationRecord, EvaluationInput } from '@/hooks/useEvaluation'
+import type { Employee, Branch } from '@/types/hr'
 
 const WE    = '#6B21A8'
 const GREEN = '#059669'
@@ -14,22 +15,26 @@ const RED   = '#DC2626'
 
 function todayStr() { return new Date().toISOString().slice(0, 10) }
 
+function fmtMonth(ym: string) {
+  return new Date(ym + '-01T00:00:00').toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })
+}
+
 function fmtDate(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('ar-EG', {
-    day: 'numeric', month: 'short', year: 'numeric',
+    day: 'numeric', month: 'short',
   })
 }
 
-// ── KPI bar ───────────────────────────────────────────────────────────────
+// ── KPI bar (yearly totals) ───────────────────────────────────────────────
 
 function KPIBar({ kpi }: { kpi: ReturnType<typeof useEvaluation>['kpi'] }) {
-  const monthColor = kpi.monthNet > 0 ? GREEN : kpi.monthNet < 0 ? RED : 'var(--text-tertiary)'
+  const nc = kpi.monthNet > 0 ? GREEN : kpi.monthNet < 0 ? RED : 'var(--text-tertiary)'
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
       <div className="card p-4">
         <p className="text-xs text-secondary mb-1">إجمالي التقييمات</p>
         <p className="text-2xl font-black num" style={{ color: WE }}>{kpi.totalRecords}</p>
-        <p className="text-xs text-tertiary mt-0.5">{kpi.uniqueEmployees} موظف</p>
+        <p className="text-xs text-tertiary mt-0.5">{kpi.uniqueEmployees} موظف مقيَّم — هذه السنة</p>
       </div>
       <div className="card p-4">
         <p className="text-xs text-secondary mb-1">درجات إيجابية</p>
@@ -43,14 +48,13 @@ function KPIBar({ kpi }: { kpi: ReturnType<typeof useEvaluation>['kpi'] }) {
       </div>
       <div className="card p-4">
         <p className="text-xs text-secondary mb-1">صافي هذا الشهر</p>
-        <p className="text-2xl font-black num" style={{ color: monthColor }}>
+        <p className="text-2xl font-black num" style={{ color: nc }}>
           {kpi.monthNet > 0 ? '+' : ''}{kpi.monthNet}
         </p>
         <div className="flex items-center gap-2 mt-0.5">
           <span className="text-[10px] font-bold" style={{ color: GREEN }}>+{kpi.monthPositiveDeg}</span>
           <span className="text-[10px] text-tertiary">/</span>
           <span className="text-[10px] font-bold" style={{ color: RED }}>−{kpi.monthNegativeDeg}</span>
-          <span className="text-[10px] text-tertiary">درجة</span>
         </div>
       </div>
     </div>
@@ -62,19 +66,17 @@ function KPIBar({ kpi }: { kpi: ReturnType<typeof useEvaluation>['kpi'] }) {
 function EvalForm({
   employees, branches, editing, onSubmit, onCancel,
 }: {
-  employees: ReturnType<typeof useEvaluation>['employees']
-  branches:  ReturnType<typeof useEvaluation>['branches']
+  employees: Employee[]
+  branches:  Branch[]
   editing:   EvaluationRecord | null
   onSubmit:  (data: EvaluationInput) => void
   onCancel:  () => void
 }) {
   const { lang } = useLanguage()
 
-  // direction: + or -
   const [direction, setDirection] = useState<1 | -1>(() =>
     editing ? (editing.score >= 0 ? 1 : -1) : 1,
   )
-  // degrees: absolute value
   const [degrees,    setDegrees]    = useState<number>(() =>
     editing ? Math.abs(editing.score) : 1,
   )
@@ -83,25 +85,25 @@ function EvalForm({
   const [date,       setDate]       = useState(editing?.date ?? todayStr())
   const [branchId,   setBranchId]   = useState(editing?.branchId ?? '')
 
-  const isEdit = !!editing
+  const isEdit     = !!editing
+  const score      = direction * degrees
+  const scoreColor = direction === 1 ? GREEN : RED
 
   function reset() {
-    setEmployeeId(''); setDirection(1); setDegrees(1); setNote(''); setDate(todayStr()); setBranchId('')
+    setEmployeeId(''); setDirection(1); setDegrees(1)
+    setNote(''); setDate(todayStr()); setBranchId('')
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!employeeId || !note.trim() || degrees < 1) return
-    const score = direction * degrees
     onSubmit({ employeeId, score, note: note.trim(), date, branchId: branchId || undefined })
     if (!isEdit) reset()
   }
 
-  // Live preview of score
-  const scorePreview = direction * degrees
-
   return (
     <div className="we-form-section">
+      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: `${WE}16` }}>
@@ -126,7 +128,8 @@ function EvalForm({
           <label className="block text-xs font-bold text-secondary mb-1">
             الموظف <span className="text-red-500">*</span>
           </label>
-          <select value={employeeId} onChange={e => setEmployeeId(e.target.value)} className="we-input" required>
+          <select value={employeeId} onChange={e => setEmployeeId(e.target.value)}
+            className="we-input" required>
             <option value="">اختر الموظف</option>
             {employees.map(emp => (
               <option key={emp.id} value={emp.id}>{getEmpName(emp)}</option>
@@ -134,60 +137,42 @@ function EvalForm({
           </select>
         </div>
 
-        {/* Direction + Degrees — في صف واحد */}
+        {/* Direction + Degrees */}
         <div>
-          <label className="block text-xs font-bold text-secondary mb-1">
+          <label className="block text-xs font-bold text-secondary mb-1.5">
             النوع والدرجات
-            {/* Live preview */}
-            <span className="mr-2 font-black text-sm"
-              style={{ color: scorePreview > 0 ? GREEN : RED }}>
-              ({scorePreview > 0 ? '+' : ''}{scorePreview} درجة)
+            <span className="mr-2 font-black text-sm" style={{ color: scoreColor }}>
+              ({score > 0 ? '+' : ''}{score} درجة)
             </span>
           </label>
-          <div className="flex gap-2">
-            {/* Direction toggle */}
-            <div className="flex gap-1 flex-shrink-0">
-              <button type="button"
-                onClick={() => setDirection(1)}
-                className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-bold border-2 transition-all"
-                style={direction === 1
-                  ? { background: `${GREEN}15`, borderColor: GREEN, color: GREEN }
-                  : { borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}>
-                <ThumbsUp size={13} /> إيجابي
-              </button>
-              <button type="button"
-                onClick={() => setDirection(-1)}
-                className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-bold border-2 transition-all"
-                style={direction === -1
-                  ? { background: `${RED}15`, borderColor: RED, color: RED }
-                  : { borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}>
-                <ThumbsDown size={13} /> سلبي
-              </button>
-            </div>
 
-            {/* Degrees number input */}
-            <div className="flex-1 flex items-center gap-1">
-              <button type="button"
-                onClick={() => setDegrees(d => Math.max(1, d - 1))}
-                className="w-8 h-full rounded-lg text-lg font-black text-secondary hover:text-primary hover:bg-elevated transition-colors flex items-center justify-center flex-shrink-0"
-                style={{ border: '1px solid var(--border)' }}>
-                −
-              </button>
-              <input
-                type="number" min={1}
-                value={degrees}
-                onChange={e => setDegrees(Math.max(1, +e.target.value || 1))}
-                className="we-input text-center font-black text-lg flex-1"
-                style={{ color: direction === 1 ? GREEN : RED }}
-              />
-              <button type="button"
-                onClick={() => setDegrees(d => d + 1)}
-                className="w-8 h-full rounded-lg text-lg font-black text-secondary hover:text-primary hover:bg-elevated transition-colors flex items-center justify-center flex-shrink-0"
-                style={{ border: '1px solid var(--border)' }}>
-                +
-              </button>
-            </div>
+          {/* Direction toggle — full width buttons */}
+          <div className="flex gap-2 mb-2">
+            <button type="button" onClick={() => setDirection(1)}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold border-2 transition-all"
+              style={direction === 1
+                ? { background: `${GREEN}15`, borderColor: GREEN, color: GREEN }
+                : { borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}>
+              <ThumbsUp size={14} /> إيجابي
+            </button>
+            <button type="button" onClick={() => setDirection(-1)}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold border-2 transition-all"
+              style={direction === -1
+                ? { background: `${RED}15`, borderColor: RED, color: RED }
+                : { borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}>
+              <ThumbsDown size={14} /> سلبي
+            </button>
           </div>
+
+          {/* Free number input — no steppers */}
+          <input
+            type="number" min={1}
+            value={degrees}
+            onChange={e => setDegrees(Math.max(1, +e.target.value || 1))}
+            className="we-input text-center font-black w-full"
+            style={{ color: scoreColor, fontSize: '1.5rem', letterSpacing: '0.05em' }}
+            placeholder="أدخل عدد الدرجات"
+          />
         </div>
 
         {/* Note */}
@@ -196,7 +181,8 @@ function EvalForm({
             الكومنت / الملاحظة <span className="text-red-500">*</span>
           </label>
           <textarea value={note} onChange={e => setNote(e.target.value)}
-            placeholder="اكتب سبب التقييم..." className="we-input resize-none" rows={3} maxLength={300} required />
+            placeholder="اكتب سبب التقييم..."
+            className="we-input resize-none" rows={3} maxLength={300} required />
         </div>
 
         {/* Date */}
@@ -223,8 +209,8 @@ function EvalForm({
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
           style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
           {isEdit
-            ? <><Save size={14} />حفظ التعديلات</>
-            : <><Plus size={14} />إضافة تقييم ({scorePreview > 0 ? '+' : ''}{scorePreview} درجة)</>
+            ? <><Save size={14} /> حفظ التعديلات</>
+            : <><Plus size={14} /> إضافة تقييم ({score > 0 ? '+' : ''}{score} درجة)</>
           }
         </button>
       </form>
@@ -232,106 +218,191 @@ function EvalForm({
   )
 }
 
-// ── Employee Eval Card ────────────────────────────────────────────────────
+// ── Month Section ─────────────────────────────────────────────────────────
 
-function EmployeeEvalCard({
-  summary, branches, onEdit, onDelete,
+type EmpStat = {
+  employee: Employee
+  records:  EvaluationRecord[]
+  pos:      number
+  neg:      number
+  net:      number
+  hasEval:  boolean
+}
+
+type MonthData = {
+  month:     string
+  empStats:  EmpStat[]
+  totalPos:  number
+  totalNeg:  number
+  totalNet:  number
+  evaluated: number
+}
+
+function MonthSection({
+  data, branches, defaultOpen, onEdit, onDelete,
 }: {
-  summary:  ReturnType<typeof useEvaluation>['summaries'][0]
-  branches: ReturnType<typeof useEvaluation>['branches']
-  onEdit:   (r: EvaluationRecord) => void
-  onDelete: (id: string) => void
+  data:        MonthData
+  branches:    Branch[]
+  defaultOpen: boolean
+  onEdit:      (r: EvaluationRecord) => void
+  onDelete:    (id: string) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const { employee, totalPositiveDeg, totalNegativeDeg, netScore, records } = summary
+  const [open,     setOpen]     = useState(defaultOpen)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
-  const name = getEmpName(employee)
 
-  const scoreColor = netScore > 0 ? GREEN : netScore < 0 ? RED : 'var(--text-tertiary)'
+  function toggleEmp(id: string) {
+    setExpanded(s => {
+      const n = new Set(s)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  }
+
+  const { month, empStats, totalPos, totalNeg, totalNet, evaluated } = data
+  const netColor = totalNet > 0 ? GREEN : totalNet < 0 ? RED : 'var(--text-tertiary)'
 
   return (
     <div className="card overflow-hidden">
+      {/* Month header */}
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full px-4 py-3 flex items-center gap-3 text-right hover:bg-white/[0.02] transition-colors"
-      >
-        {/* Avatar */}
-        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0"
-          style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
-          {name.charAt(0)}
-        </div>
+        style={{ borderBottom: open ? '1px solid var(--border)' : 'none' }}>
 
-        {/* Name + degree bars */}
-        <div className="flex-1 min-w-0 text-right">
-          <p className="font-bold text-primary text-sm truncate">{name}</p>
-          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-            <span className="text-[10px] font-bold" style={{ color: GREEN }}>
-              +{totalPositiveDeg} درجة إيجابية
+        {/* Month name */}
+        <div className="flex-1 text-right">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-black text-primary text-sm">{fmtMonth(month)}</span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: `${WE}14`, color: WE }}>
+              {evaluated} / {empStats.length} مقيَّم
             </span>
-            <span className="text-[10px] font-bold" style={{ color: RED }}>
-              −{totalNegativeDeg} درجة سلبية
-            </span>
-            <span className="text-[10px] text-tertiary">({records.length} تقييم)</span>
           </div>
         </div>
 
-        {/* Net score badge */}
+        {/* KPI badges */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-lg font-black num px-2 py-0.5 rounded-xl"
-            style={{
-              color: scoreColor,
-              background: netScore > 0 ? `${GREEN}12` : netScore < 0 ? `${RED}12` : 'var(--bg-elevated)',
-            }}>
-            {netScore > 0 ? '+' : ''}{netScore}
+          {totalPos > 0 && (
+            <span className="text-xs font-black num px-2 py-1 rounded-lg"
+              style={{ background: `${GREEN}14`, color: GREEN }}>+{totalPos}</span>
+          )}
+          {totalNeg > 0 && (
+            <span className="text-xs font-black num px-2 py-1 rounded-lg"
+              style={{ background: `${RED}14`, color: RED }}>−{totalNeg}</span>
+          )}
+          <span className="text-sm font-black num px-2 py-1 rounded-lg"
+            style={{ color: netColor, background: totalNet !== 0 ? `${netColor}12` : 'var(--bg-elevated)' }}>
+            {totalNet > 0 ? '+' : ''}{totalNet}
           </span>
-          {open ? <ChevronUp size={14} className="text-tertiary" /> : <ChevronDown size={14} className="text-tertiary" />}
+          {open
+            ? <ChevronUp size={14} className="text-tertiary" />
+            : <ChevronDown size={14} className="text-tertiary" />
+          }
         </div>
       </button>
 
+      {/* Employee list */}
       {open && (
-        <div className="border-t" style={{ borderColor: 'var(--border)' }}>
-          <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-            {records.map(rec => {
-              const br    = rec.branchId ? branchMap[rec.branchId] : null
-              const isPos = rec.score > 0
-              return (
-                <div key={rec.id} className="px-4 py-3 flex items-start gap-3">
-                  {/* Score badge */}
-                  <div className="mt-0.5 flex-shrink-0 flex items-center justify-center w-10 h-6 rounded-lg text-xs font-black"
-                    style={{
-                      background: isPos ? `${GREEN}15` : `${RED}15`,
-                      color: isPos ? GREEN : RED,
-                    }}>
-                    {isPos ? '+' : ''}{rec.score}
+        <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+          {empStats.map(stat => {
+            const name    = getEmpName(stat.employee)
+            const isOpen  = expanded.has(stat.employee.id)
+            const nc      = stat.net > 0 ? GREEN : stat.net < 0 ? RED : 'var(--text-tertiary)'
+
+            return (
+              <div key={stat.employee.id}
+                style={{ opacity: stat.hasEval ? 1 : 0.38 }}>
+
+                {/* Employee row */}
+                <div
+                  className="px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-white/[0.015] transition-colors"
+                  onClick={() => stat.hasEval && toggleEmp(stat.employee.id)}>
+
+                  {/* Avatar */}
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[11px] font-black flex-shrink-0"
+                    style={{ background: stat.hasEval ? 'linear-gradient(135deg,#6B21A8,#4C1D95)' : 'var(--bg-elevated)' }}>
+                    <span style={{ color: stat.hasEval ? '#fff' : 'var(--text-tertiary)' }}>
+                      {name.charAt(0)}
+                    </span>
                   </div>
 
-                  {/* Note + meta */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-primary leading-relaxed">{rec.note}</p>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                      <span className="text-[10px] text-tertiary num">{fmtDate(rec.date)}</span>
-                      {br && <span className="text-[10px] text-tertiary">{br.storeNameAr || br.storeName}</span>}
-                      <span className="text-[10px] font-bold" style={{ color: isPos ? GREEN : RED }}>
-                        {isPos ? `+${rec.score}` : rec.score} درجة
+                  {/* Name */}
+                  <span className="flex-1 text-sm font-semibold text-primary truncate">{name}</span>
+
+                  {/* Score chips */}
+                  {stat.hasEval ? (
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {stat.pos > 0 && (
+                        <span className="text-[11px] font-black num px-1.5 py-0.5 rounded-lg"
+                          style={{ background: `${GREEN}14`, color: GREEN }}>+{stat.pos}</span>
+                      )}
+                      {stat.neg > 0 && (
+                        <span className="text-[11px] font-black num px-1.5 py-0.5 rounded-lg"
+                          style={{ background: `${RED}14`, color: RED }}>−{stat.neg}</span>
+                      )}
+                      <span className="text-sm font-black num px-2 py-0.5 rounded-lg"
+                        style={{ color: nc, background: `${nc}12` }}>
+                        {stat.net > 0 ? '+' : ''}{stat.net}
                       </span>
+                      {isOpen
+                        ? <ChevronUp size={12} className="text-tertiary" />
+                        : <ChevronDown size={12} className="text-tertiary" />
+                      }
                     </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-0.5 flex-shrink-0">
-                    <button onClick={() => onEdit(rec)}
-                      className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors" title="تعديل">
-                      <Pencil size={12} />
-                    </button>
-                    <button onClick={() => onDelete(rec.id)}
-                      className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors" title="حذف">
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
+                  ) : (
+                    <span className="text-xs text-tertiary flex-shrink-0">— لا يوجد تقييم</span>
+                  )}
                 </div>
-              )
-            })}
-          </div>
+
+                {/* Expanded evaluations */}
+                {isOpen && stat.hasEval && (
+                  <div className="mx-4 mb-2 rounded-xl overflow-hidden"
+                    style={{ border: '1px solid var(--border)', background: 'var(--bg-elevated)' }}>
+                    {stat.records.map(rec => {
+                      const isPos = rec.score > 0
+                      const br    = rec.branchId ? branchMap[rec.branchId] : null
+                      return (
+                        <div key={rec.id}
+                          className="px-3 py-2.5 flex items-start gap-2.5 border-b last:border-b-0"
+                          style={{ borderColor: 'var(--border)' }}>
+                          {/* Score badge */}
+                          <span className="flex-shrink-0 text-[11px] font-black num px-2 py-1 rounded-lg mt-0.5"
+                            style={{
+                              background: isPos ? `${GREEN}15` : `${RED}15`,
+                              color: isPos ? GREEN : RED,
+                            }}>
+                            {isPos ? '+' : ''}{rec.score}
+                          </span>
+                          {/* Note + meta */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-primary leading-relaxed">{rec.note}</p>
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              <span className="text-[10px] text-tertiary">{fmtDate(rec.date)}</span>
+                              {br && <span className="text-[10px] text-tertiary">{br.storeNameAr || br.storeName}</span>}
+                            </div>
+                          </div>
+                          {/* Actions */}
+                          <div className="flex gap-0.5 flex-shrink-0">
+                            <button
+                              onClick={e => { e.stopPropagation(); onEdit(rec) }}
+                              className="p-1 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors">
+                              <Pencil size={11} />
+                            </button>
+                            <button
+                              onClick={e => { e.stopPropagation(); onDelete(rec.id) }}
+                              className="p-1 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -342,12 +413,11 @@ function EmployeeEvalCard({
 
 export default function EvaluationPage() {
   const {
-    employees, branches, records, summaries, kpi,
+    employees, branches, records, kpi,
     addRecord, updateRecord, deleteRecord,
   } = useEvaluation()
 
   const [editing, setEditing] = useState<EvaluationRecord | null>(null)
-  const [search,  setSearch]  = useState('')
 
   function handleSubmit(data: EvaluationInput) {
     if (editing) { updateRecord(editing.id, data); setEditing(null) }
@@ -358,13 +428,43 @@ export default function EvaluationPage() {
     if (window.confirm('هل تريد حذف هذا التقييم؟')) deleteRecord(id)
   }
 
-  const year = new Date().getFullYear()
+  // Build monthly breakdown — all employees, all months
+  const currentMonth = new Date().toISOString().slice(0, 7)
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return summaries
-    return summaries.filter(s => getEmpName(s.employee).toLowerCase().includes(q))
-  }, [summaries, search])
+  const monthlyData = useMemo((): MonthData[] => {
+    const monthSet = new Set(records.map(r => r.date.slice(0, 7)))
+    monthSet.add(currentMonth)
+    const months = [...monthSet].sort((a, b) => b.localeCompare(a)) // newest first
+
+    return months.map(month => {
+      const monthRecs = records.filter(r => r.date.startsWith(month))
+
+      const empStats: EmpStat[] = employees.map(emp => {
+        const recs = monthRecs.filter(r => r.employeeId === emp.id)
+        const pos  = recs.filter(r => r.score > 0).reduce((s, r) => s + r.score, 0)
+        const neg  = recs.filter(r => r.score < 0).reduce((s, r) => s + Math.abs(r.score), 0)
+        const net  = recs.reduce((s, r) => s + r.score, 0)
+        return { employee: emp, records: recs, pos, neg, net, hasEval: recs.length > 0 }
+      })
+
+      // Sort: evaluated first (by net desc), then unevaluated (by name)
+      empStats.sort((a, b) => {
+        if (a.hasEval && !b.hasEval) return -1
+        if (!a.hasEval && b.hasEval) return 1
+        if (a.hasEval && b.hasEval) return b.net - a.net
+        return getEmpName(a.employee).localeCompare(getEmpName(b.employee))
+      })
+
+      const totalPos  = empStats.reduce((s, e) => s + e.pos, 0)
+      const totalNeg  = empStats.reduce((s, e) => s + e.neg, 0)
+      const totalNet  = totalPos - totalNeg
+      const evaluated = empStats.filter(e => e.hasEval).length
+
+      return { month, empStats, totalPos, totalNeg, totalNet, evaluated }
+    })
+  }, [records, employees, currentMonth])
+
+  const year = new Date().getFullYear()
 
   return (
     <div style={{ direction: 'rtl' }}>
@@ -379,7 +479,7 @@ export default function EvaluationPage() {
             <h1 className="text-xl font-black text-primary">التقييمات</h1>
           </div>
           <p className="text-sm text-secondary">
-            تقييم أداء الموظفين بالدرجات · تجميع شهري · سنة {year}
+            تقييم أداء الموظفين بالدرجات · عرض شهري لكل الموظفين · سنة {year}
           </p>
         </div>
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white flex-shrink-0"
@@ -393,49 +493,35 @@ export default function EvaluationPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-5">
 
-        {/* Left: form */}
+        {/* Left: form (sticky) */}
         <div className="lg:self-start lg:sticky lg:top-[72px]">
           <EvalForm
             key={editing?.id ?? 'new'}
-            employees={employees} branches={branches}
-            editing={editing} onSubmit={handleSubmit}
+            employees={employees}
+            branches={branches}
+            editing={editing}
+            onSubmit={handleSubmit}
             onCancel={() => setEditing(null)}
           />
         </div>
 
-        {/* Right: employee cards */}
-        <div className="min-w-0">
-          <div className="relative mb-4">
-            <Search size={14} className="absolute top-1/2 -translate-y-1/2 text-tertiary pointer-events-none"
-              style={{ right: '0.75rem' }} />
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="بحث عن موظف..." className="we-input pr-9 w-full" />
+        {/* Right: monthly sections */}
+        <div className="min-w-0 space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-sm font-bold text-primary">التقييمات الشهرية</h2>
+            <span className="text-xs text-tertiary">— كل الموظفين · {employees.length} موظف</span>
           </div>
 
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-bold text-primary">الموظفون · سنة {year}</h2>
-            <span className="text-xs text-tertiary">{filtered.length} موظف مقيَّم</span>
-          </div>
-
-          {filtered.length === 0 ? (
-            <div className="card p-12 flex flex-col items-center gap-3 text-center">
-              <Star size={38} className="text-tertiary" strokeWidth={1.4} />
-              <p className="text-secondary font-semibold text-sm">لا توجد تقييمات بعد</p>
-              <p className="text-tertiary text-xs">أضف أول تقييم من النموذج على اليسار</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-              {filtered.map(summary => (
-                <EmployeeEvalCard
-                  key={summary.employee.id}
-                  summary={summary}
-                  branches={branches}
-                  onEdit={r => { setEditing(r); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </div>
-          )}
+          {monthlyData.map(data => (
+            <MonthSection
+              key={data.month}
+              data={data}
+              branches={branches}
+              defaultOpen={data.month === currentMonth}
+              onEdit={r => { setEditing(r); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+              onDelete={handleDelete}
+            />
+          ))}
         </div>
       </div>
     </div>
