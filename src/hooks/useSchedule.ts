@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { Employee, Branch, ScheduleEntry, ScheduleAlert, ScheduleCellType } from '@/types/hr'
-import { EMPLOYEES, BRANCHES, SEED_SCHEDULE_ENTRIES } from '@/data/seedData'
+import { EMPLOYEES, BRANCHES, SEED_SCHEDULE_ENTRIES, FIRST_SCHEDULE_ENTRIES } from '@/data/seedData'
 import { storage } from '@/lib/storage'
 
 function uid() {
@@ -26,10 +26,22 @@ export function useSchedule() {
   )
 
   const [entries, setEntries] = useState<ScheduleEntry[]>(() => {
+    // All seed entries (permanent — Dec 2025 → Jun 2026)
+    const ALL_SEEDS = [
+      ...(FIRST_SCHEDULE_ENTRIES  as unknown as ScheduleEntry[]),
+      ...(SEED_SCHEDULE_ENTRIES   as unknown as ScheduleEntry[]),
+    ]
+
     const raw = storage.get<ScheduleEntry[] | null>('schedule-entries', null)
-    if (raw !== null && Array.isArray(raw)) return raw.map(e => ({ ...e, cellType: e.cellType ?? 'branch' }))
-    // First visit — load seed data from HTML schedule
-    return (SEED_SCHEDULE_ENTRIES as unknown as ScheduleEntry[])
+    if (raw !== null && Array.isArray(raw)) {
+      // Merge: keep user-added entries, then add any seed entries that aren't already present
+      const existingIds = new Set(raw.map(e => e.id))
+      const missing = ALL_SEEDS.filter(s => !existingIds.has(s.id))
+      const merged  = [...raw.map(e => ({ ...e, cellType: e.cellType ?? 'branch' })), ...missing]
+      return merged
+    }
+    // First visit (no localStorage yet) — start from full seed
+    return ALL_SEEDS
   })
 
   useEffect(() => { storage.set('schedule-entries', entries) }, [entries])

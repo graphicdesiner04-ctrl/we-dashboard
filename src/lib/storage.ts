@@ -1,5 +1,5 @@
 const PREFIX = 'we-ts-'
-const STORAGE_VERSION = '3'
+const STORAGE_VERSION = '4'
 const VERSION_KEY = 'we-ts-version'
 
 // Force-clear all keys when storage schema changes (e.g. after removing br-09)
