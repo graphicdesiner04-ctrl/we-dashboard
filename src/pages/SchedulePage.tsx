@@ -22,11 +22,11 @@ const COU_DEFAULTS = {
   cashBoxClosed:  "we don't have cash box",
   directManager:  'Raouf Emeel',
   managerEmail:   'raouf.emeel@te.eg',
-  division:       'الدعم الفنى بمنافذ البيع وزيارات العملاء',
-  department:     'إدارة دعم المنافذ والعملاء',
-  generalDept:    'الإدارة العامة للمبيعات بمحافظات الصعيد',
+  division:       'Raouf Emeel',                                               // col 12 = same as Direct Manager
+  department:     'إدارة الدعم الفنى بمنافذ البيع وزيارات العملاء',            // col 14
+  generalDept:    'إدارة الدعم الفنى بمنافذ البيع وزيارات العملاء',            // col 15 (same)
   sector:         'قطاع شمال الصعيد',
-  affiliation:    'محافظة المنيا',
+  affiliation:    'خدمة العملاء',                                              // col 17
 }
 
 
@@ -954,41 +954,81 @@ function ChangeOUModal({ editing, branches, employees, preset, onClose, onSave, 
 
 // ── Change OU view ────────────────────────────────────────────────────────
 
-function ChangeOUView({ records, autoAlerts, onAdd, onEdit, onDelete, onDocument }: {
+function ChangeOUView({ records, autoAlerts, employees, branches, onAdd, onEdit, onDelete, onDocument }: {
   records:    ChangeOURecord[]
   autoAlerts: OUChangeAlert[]
+  employees:  ReturnType<typeof useSchedule>['employees']
+  branches:   ReturnType<typeof useSchedule>['branches']
   onAdd:      () => void
   onEdit:     (r: ChangeOURecord) => void
   onDelete:   (id: string) => void
   onDocument: (alert: OUChangeAlert) => void
 }) {
+  const empMap    = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
+  const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
+
+  // Build a complete row for any alert (auto or manual)
+  function alertToRow(a: OUChangeAlert) {
+    const emp    = empMap[a.employeeId]
+    const fromBr = branchMap[a.fromBranchId]
+    const toBr   = branchMap[a.toBranchId]
+    return {
+      'Type':                   'TEData',
+      'User Account':           emp?.domainName ?? emp?.user ?? a.employeeName,
+      'Account Name':           a.employeeName,
+      'Email':                  emp?.email ?? '',
+      'Mobile':                 emp?.mobile ?? '',
+      'ID Number':              emp?.nationalId ?? '',
+      'Role Name':              COU_DEFAULTS.roleName,
+      'Old OU':                 a.fromBranch,
+      'New OU':                 a.toBranch,
+      'Cash Box Closed':        COU_DEFAULTS.cashBoxClosed,
+      'Direct Manager':         COU_DEFAULTS.directManager,
+      'Division':               COU_DEFAULTS.division,
+      'Old OU Code':            fromBr?.ou ?? '',
+      'New OU Code':            toBr?.ou ?? '',
+      'الاداره':                COU_DEFAULTS.department,
+      'الادارة العامه':         COU_DEFAULTS.generalDept,
+      'القطاع':                 COU_DEFAULTS.sector,
+      'النيابه':                COU_DEFAULTS.affiliation,
+      'ايميل المدير المباشر':  COU_DEFAULTS.managerEmail,
+      'رقم العامل':             emp?.employeeCode ?? '',
+    }
+  }
+
   function exportAll() {
-    if (!records.length) { alert('لا توجد سجلات'); return }
-    const rows = records.map(r => ({
-      'Type': 'TEData',
-      'User Account': r.userAccount,
-      'Account Name': r.accountName,
-      'Email': r.email,
-      'Mobile': r.mobile,
-      'ID Number': r.idNumber,
-      'Role Name': r.roleName,
-      'Old OU': r.oldOU,
-      'New OU': r.newOU,
-      'Cash Box Closed': r.cashBoxClosed,
-      'Direct Manager': r.directManager,
-      'Division': r.division,
-      'Old OU Code': r.oldOUCode,
-      'New OU Code': r.newOUCode,
-      'الادارة': r.department,
-      'الادارة العامة': r.generalDept,
-      'القطاع': r.sector,
-      'التابعية': r.affiliation,
-      'ايميل المدير المباشر': r.managerEmail,
-      'رقم العامل': r.employeeNumber,
+    // Export auto-detected alerts (complete, auto-filled) + manual documented records
+    const autoRows = autoAlerts.map(a => alertToRow(a))
+    const manualRows = records.map(r => ({
+      'Type':                   'TEData',
+      'User Account':           r.userAccount,
+      'Account Name':           r.accountName,
+      'Email':                  r.email,
+      'Mobile':                 r.mobile,
+      'ID Number':              r.idNumber,
+      'Role Name':              r.roleName,
+      'Old OU':                 r.oldOU,
+      'New OU':                 r.newOU,
+      'Cash Box Closed':        r.cashBoxClosed,
+      'Direct Manager':         r.directManager,
+      'Division':               r.division,
+      'Old OU Code':            r.oldOUCode,
+      'New OU Code':            r.newOUCode,
+      'الاداره':                r.department,
+      'الادارة العامه':         r.generalDept,
+      'القطاع':                 r.sector,
+      'النيابه':                r.affiliation,
+      'ايميل المدير المباشر':  r.managerEmail,
+      'رقم العامل':             r.employeeNumber,
     }))
+
+    // Combine: auto first, then manual (avoid duplicates by userAccount+date is hard — just merge)
+    const rows = [...autoRows, ...manualRows]
+    if (!rows.length) { alert('لا توجد بيانات للتصدير'); return }
+
     const wb = XLSX.utils.book_new()
     const ws = XLSX.utils.json_to_sheet(rows)
-    ws['!cols'] = [10,20,28,22,14,18,28,14,14,20,20,20,18,18,30,30,18,14,24,12].map(wch => ({ wch }))
+    ws['!cols'] = [10,20,28,22,14,18,28,14,14,20,20,20,18,18,36,36,18,14,24,12].map(wch => ({ wch }))
     XLSX.utils.book_append_sheet(wb, ws, 'Change OU')
     const label = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     XLSX.writeFile(wb, `Change OU - ${label}.xlsx`)
@@ -1068,39 +1108,78 @@ function ChangeOUView({ records, autoAlerts, onAdd, onEdit, onDelete, onDocument
 
                 {/* Employees under this date */}
                 <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-                  {alerts.map(a => (
-                    <div key={`${a.employeeId}-${a.date}`}
-                      className="px-4 py-3 flex items-center gap-3 flex-wrap">
-                      {/* Avatar */}
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0"
-                        style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
-                        {a.employeeName.charAt(0)}
+                  {alerts.map(a => {
+                    const emp    = empMap[a.employeeId]
+                    const fromBr = branchMap[a.fromBranchId]
+                    const toBr   = branchMap[a.toBranchId]
+                    return (
+                      <div key={`${a.employeeId}-${a.date}`}
+                        className="px-4 py-3 flex items-start gap-3">
+                        {/* Avatar */}
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0 mt-0.5"
+                          style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
+                          {a.employeeName.charAt(0)}
+                        </div>
+
+                        {/* Full data block */}
+                        <div className="flex-1 min-w-0">
+                          {/* Row 1: Name + domain + code */}
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="font-bold text-sm text-primary">{a.employeeName}</span>
+                            {emp?.domainName && (
+                              <span className="text-[10px] font-mono text-tertiary">{emp.domainName}</span>
+                            )}
+                            {emp?.employeeCode && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md num"
+                                style={{ background: `${WE}12`, color: WE }}>
+                                {emp.employeeCode}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Row 2: Old OU → New OU with codes */}
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <div className="flex flex-col items-start">
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg"
+                                style={{ background: 'rgba(220,38,38,0.12)', color: '#DC2626' }}>
+                                {a.fromBranch}
+                              </span>
+                              {fromBr?.ou && (
+                                <span className="text-[9px] font-mono text-tertiary mt-0.5 px-2">{fromBr.ou}</span>
+                              )}
+                            </div>
+                            <span className="text-tertiary text-xs">←</span>
+                            <div className="flex flex-col items-start">
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg"
+                                style={{ background: 'rgba(5,150,105,0.12)', color: '#059669' }}>
+                                {a.toBranch}
+                              </span>
+                              {toBr?.ou && (
+                                <span className="text-[9px] font-mono text-tertiary mt-0.5 px-2">{toBr.ou}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Row 3: Email + Mobile */}
+                          <div className="flex items-center gap-3 flex-wrap">
+                            {emp?.email && (
+                              <span className="text-[10px] text-tertiary font-mono">{emp.email}</span>
+                            )}
+                            {emp?.mobile && (
+                              <span className="text-[10px] num text-tertiary">{emp.mobile}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Document button */}
+                        <button onClick={() => onDocument(a)}
+                          className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-80 mt-0.5"
+                          style={{ background: `${WE}15`, color: WE }}>
+                          <Repeat2 size={11} /> توثيق OU
+                        </button>
                       </div>
-
-                      {/* Name */}
-                      <span className="font-bold text-sm text-primary min-w-[120px]">{a.employeeName}</span>
-
-                      {/* From → To */}
-                      <div className="flex items-center gap-2 flex-1">
-                        <span className="text-xs font-semibold px-2 py-1 rounded-lg"
-                          style={{ background: 'rgba(220,38,38,0.12)', color: '#DC2626' }}>
-                          {a.fromBranch}
-                        </span>
-                        <span className="text-tertiary text-xs">←</span>
-                        <span className="text-xs font-semibold px-2 py-1 rounded-lg"
-                          style={{ background: 'rgba(5,150,105,0.12)', color: '#059669' }}>
-                          {a.toBranch}
-                        </span>
-                      </div>
-
-                      {/* Document button */}
-                      <button onClick={() => onDocument(a)}
-                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-80"
-                        style={{ background: `${WE}15`, color: WE }}>
-                        <Repeat2 size={11} /> توثيق OU
-                      </button>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             ))}
@@ -1576,15 +1655,20 @@ export default function SchedulePage() {
 
   // Convert auto-detected OUChangeAlert → COU form preset then open modal
   function openCOUFromAutoAlert(a: OUChangeAlert) {
-    const emp = employees.find(e => e.id === a.employeeId)
+    const emp    = employees.find(e => e.id === a.employeeId)
+    const fromBr = branches.find(b => b.id === a.fromBranchId)
+    const toBr   = branches.find(b => b.id === a.toBranchId)
     const preset: Partial<ChangeOUInput> = {
       userAccount:    emp?.domainName ?? emp?.user ?? '',
       accountName:    a.employeeName,
       email:          emp?.email ?? '',
       mobile:         emp?.mobile ?? '',
+      idNumber:       emp?.nationalId ?? '',
       employeeNumber: emp?.employeeCode ?? '',
       oldOU:          a.fromBranch,
       newOU:          a.toBranch,
+      oldOUCode:      fromBr?.ou ?? '',
+      newOUCode:      toBr?.ou ?? '',
       note:           `تغيير تلقائي بتاريخ ${a.date}`,
     }
     setCouPreset(preset); setEditingCOU(null); setCouModal(true); setView('changeou')
@@ -1705,6 +1789,8 @@ export default function SchedulePage() {
         <ChangeOUView
           records={couRecords}
           autoAlerts={ouChangeAlerts}
+          employees={employees}
+          branches={branches}
           onAdd={() => { setEditingCOU(null); setCouModal(true) }}
           onEdit={r => { setEditingCOU(r); setCouModal(true) }}
           onDelete={id => { if (window.confirm('حذف هذا السجل؟')) deleteCOU(id) }}
