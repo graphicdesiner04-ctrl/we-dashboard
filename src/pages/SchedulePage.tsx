@@ -1312,67 +1312,108 @@ function AnalyticsView({ entries, employees, branches }: {
         ))}
       </div>
 
-      {/* Employee table */}
-      <div className="card overflow-hidden mb-6">
-        <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
+      {/* Employee cards — branch breakdown */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-3">
           <BarChart2 size={14} style={{ color: WE }} />
           <h3 className="text-xs font-black text-primary">إحصائيات الموظفين</h3>
+          <span className="text-xs text-tertiary">· يتحدث تلقائياً مع الجدول</span>
         </div>
-        <div className="table-scroll">
-          <table className="we-table w-full min-w-[600px]">
-            <thead>
-              <tr>
-                <th className="text-right">الموظف</th>
-                <th className="text-center">أيام عمل</th>
-                <th className="text-center">راحة</th>
-                <th className="text-center">سنوي</th>
-                <th className="text-center">مريض</th>
-                <th className="text-right">توزيع الفروع</th>
-              </tr>
-            </thead>
-            <tbody>
-              {employees.map(emp => {
-                const s = stats[emp.id]
-                if (!s && !entries.find(e => e.employeeId === emp.id)) return null
-                const totalDays = (s?.totalWork ?? 0) + (s?.totalOff ?? 0) + (s?.totalAnnual ?? 0) + (s?.totalSick ?? 0)
-                return (
-                  <tr key={emp.id}>
-                    <td>
-                      <p className="font-bold text-primary text-sm">{getEmpName(emp)}</p>
-                      <p className="text-[10px] text-secondary font-mono">{emp.employeeCode}</p>
-                    </td>
-                    <td className="text-center">
-                      <span className="font-black text-sm" style={{ color: WE }}>{s?.totalWork ?? 0}</span>
-                    </td>
-                    <td className="text-center">
-                      <span className="text-sm text-secondary">{s?.totalOff ?? 0}</span>
-                    </td>
-                    <td className="text-center">
-                      <span className="text-sm" style={{ color: '#fbbf24' }}>{s?.totalAnnual ?? 0}</span>
-                    </td>
-                    <td className="text-center">
-                      <span className="text-sm" style={{ color: '#fca5a5' }}>{s?.totalSick ?? 0}</span>
-                    </td>
-                    <td>
-                      <div className="flex flex-wrap gap-1">
-                        {Object.entries(s?.byBranch ?? {}).sort((a,b)=>b[1]-a[1]).map(([brId, cnt]) => {
-                          const br = branchMap[brId]
-                          const style = BRANCH_CELL[brId]
-                          const pct = totalDays > 0 ? Math.round(cnt / totalDays * 100) : 0
-                          return (
-                            <span key={brId} className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                              style={{ background: style?.bg ?? `${WE}18`, color: style?.fg ?? WE }}>
-                              {br?.storeNameAr || br?.storeName || brId}: {cnt}د ({pct}%)
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+          {employees.map(emp => {
+            const s = stats[emp.id]
+            if (!s) return null
+            const workDays   = s.totalWork   // branch + visit days
+            const branchList = Object.entries(s.byBranch).sort((a, b) => b[1] - a[1])
+            const initials   = getEmpName(emp).charAt(0)
+
+            return (
+              <div key={emp.id} className="card overflow-hidden">
+                {/* Card header */}
+                <div className="px-4 pt-4 pb-3 flex items-center gap-3"
+                  style={{ borderBottom: '1px solid var(--border)' }}>
+                  {/* Avatar */}
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-black flex-shrink-0"
+                    style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
+                    {initials}
+                  </div>
+
+                  {/* Name + code */}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-primary text-sm truncate">{getEmpName(emp)}</p>
+                    <p className="text-[10px] text-tertiary font-mono">{emp.employeeCode}</p>
+                  </div>
+
+                  {/* Summary pills */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+                    <span className="text-[11px] font-black px-2 py-1 rounded-lg"
+                      style={{ background: `${WE}18`, color: WE }}>
+                      {workDays} عمل
+                    </span>
+                    {s.totalAnnual > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-lg"
+                        style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}>
+                        {s.totalAnnual} سنوي
+                      </span>
+                    )}
+                    {s.totalSick > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-lg"
+                        style={{ background: 'rgba(239,68,68,0.15)', color: '#fca5a5' }}>
+                        {s.totalSick} مريض
+                      </span>
+                    )}
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-lg"
+                      style={{ background: 'rgba(75,85,99,0.18)', color: '#9ca3af' }}>
+                      {s.totalOff} راحة
+                    </span>
+                  </div>
+                </div>
+
+                {/* Branch breakdown */}
+                <div className="px-4 py-3 space-y-2.5">
+                  {branchList.length === 0 ? (
+                    <p className="text-xs text-tertiary text-center py-2">لا توجد أيام فروع مسجلة</p>
+                  ) : branchList.map(([brId, cnt]) => {
+                    const br    = branchMap[brId]
+                    const bCell = BRANCH_CELL[brId]
+                    const pct   = workDays > 0 ? Math.round(cnt / workDays * 100) : 0
+                    const name  = br?.storeNameAr || br?.storeName || brId
+                    const fg    = bCell?.fg ?? WE
+                    const bg    = bCell?.bg ?? `${WE}22`
+
+                    return (
+                      <div key={brId}>
+                        {/* Branch label row */}
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ background: bg, color: fg }}>
+                            {name}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-black num" style={{ color: fg }}>
+                              {cnt} يوم
                             </span>
-                          )
-                        })}
+                            <span className="text-[11px] font-black num w-10 text-left" style={{ color: fg }}>
+                              {pct}%
+                            </span>
+                          </div>
+                        </div>
+                        {/* Progress bar */}
+                        <div className="h-1.5 rounded-full overflow-hidden"
+                          style={{ background: 'var(--bg-elevated)' }}>
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%`, background: fg, opacity: 0.85 }}
+                          />
+                        </div>
                       </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
 
