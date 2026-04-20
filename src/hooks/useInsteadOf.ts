@@ -1,47 +1,62 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { Employee, Branch, InsteadOfRecord } from '@/types/hr'
-import { EMPLOYEES, BRANCHES, INSTEAD_OF_INITIAL } from '@/data/seedData'
+import { INSTEAD_OF_INITIAL } from '@/data/seedData'
 import { getCurrentBranchId } from '@/hooks/useAssignments'
 import { storage } from '@/lib/storage'
+import { useRegion } from '@/context/RegionContext'
+import { loadAllEmployees, loadAllBranches } from '@/lib/regionHelpers'
 
 function uid() {
   return `io-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
 }
 
 export type InsteadOfInput = {
-  employeeId:       string          // الموظف الذي اشتغل في يوم إجازته
-  branchId?:        string          // الفرع (اختياري)
-  date:             string          // YYYY-MM-DD — اليوم الذي اشتغل فيه
-  replacementDate?: string          // YYYY-MM-DD — يوم البدل الذي أُخذ مكانه
+  employeeId:       string
+  branchId?:        string
+  date:             string
+  replacementDate?: string
   note:             string
 }
 
 export interface InsteadOfSummary {
   employee:          Employee
   currentBranchId:   string | null
-  workedCount:       number          // أيام اشتغلها في وقت إجازته
-  compensatoryGiven: number          // أيام بدل أُعطيت له
-  remainingOwed:     number          // أيام لم تُعطَ بعد
+  workedCount:       number
+  compensatoryGiven: number
+  remainingOwed:     number
 }
 
 export interface InsteadOfKPI {
   totalRecords:   number
   uniqueWorkers:  number
-  totalOwed:      number   // مجموع الأيام المستحقة لم تُعطَ بعد
-  totalGiven:     number   // مجموع أيام البدل التي أُعطيت
+  totalOwed:      number
+  totalGiven:     number
 }
 
 export function useInsteadOf() {
-  const [employees] = useState<Employee[]>(
-    () => storage.get<Employee[]>('employees', EMPLOYEES),
-  )
-  const [branches] = useState<Branch[]>(
-    () => storage.get<Branch[]>('branches', BRANCHES),
+  const { region } = useRegion()
+
+  const [allEmployees] = useState<Employee[]>(loadAllEmployees)
+  const employees = useMemo(
+    () => allEmployees.filter(e => (e.region ?? 'south') === region),
+    [allEmployees, region],
   )
 
-  const [records, setRecords] = useState<InsteadOfRecord[]>(
-    () => storage.get<InsteadOfRecord[]>('io-records', INSTEAD_OF_INITIAL),
+  const [allBranches] = useState<Branch[]>(loadAllBranches)
+  const branches = useMemo(
+    () => allBranches.filter(b => (b.region ?? 'south') === region),
+    [allBranches, region],
   )
+
+  const [records, setRecords] = useState<InsteadOfRecord[]>(() => {
+    const raw = storage.get<InsteadOfRecord[] | null>('io-records', null)
+    if (raw !== null && Array.isArray(raw)) {
+      const existingIds = new Set(raw.map(r => r.id))
+      const missing = INSTEAD_OF_INITIAL.filter(s => !existingIds.has(s.id))
+      return [...raw, ...missing]
+    }
+    return [...INSTEAD_OF_INITIAL]
+  })
 
   useEffect(() => { storage.set('io-records', records) }, [records])
 
@@ -59,16 +74,18 @@ export function useInsteadOf() {
 
   const resetRecords = useCallback(() => setRecords([]), [])
 
+  const empIds = useMemo(() => new Set(employees.map(e => e.id)), [employees])
+
   const year = new Date().getFullYear().toString()
   const currentYearRecords = useMemo(
-    () => records.filter(r => r.date.startsWith(year)),
-    [records, year],
+    () => records.filter(r => r.date.startsWith(year) && empIds.has(r.employeeId)),
+    [records, year, empIds],
   )
 
   const summaries = useMemo((): InsteadOfSummary[] =>
     employees.map(emp => {
-      const empRecs          = currentYearRecords.filter(r => r.employeeId === emp.id)
-      const workedCount      = empRecs.length
+      const empRecs           = currentYearRecords.filter(r => r.employeeId === emp.id)
+      const workedCount       = empRecs.length
       const compensatoryGiven = empRecs.filter(r => !!r.replacementDate).length
       return {
         employee:          emp,

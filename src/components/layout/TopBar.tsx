@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useTheme }    from '@/context/ThemeContext'
 import { useAuth }     from '@/context/AuthContext'
 import { useLanguage } from '@/context/LanguageContext'
+import { useRegion }   from '@/context/RegionContext'
 
 // ── Page titles ───────────────────────────────────────────────────────────
 
@@ -62,6 +63,8 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
   const { session, logout }    = useAuth()
   const { lang, toggleLang, dir } = useLanguage()
 
+  const { region, setRegion } = useRegion()
+
   const isAr    = lang === 'ar'
   const TITLES  = isAr ? TITLES_AR : TITLES_EN
   const ROLE_LB = isAr ? ROLE_AR   : ROLE_EN
@@ -106,6 +109,30 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
       >
         <Calendar size={12} className="text-tertiary" />
         <span>{arabicMonth()}</span>
+      </div>
+
+      {/* Region toggle */}
+      <div
+        className="flex items-center rounded-xl overflow-hidden text-xs font-black border"
+        style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}
+        title={region === 'south' ? 'التبديل إلى شمال المنيا' : 'التبديل إلى جنوب المنيا'}
+      >
+        <button
+          onClick={() => setRegion('south')}
+          className="px-2.5 py-1.5 transition-colors"
+          style={{
+            background: region === 'south' ? 'linear-gradient(135deg,#6B21A8,#4C1D95)' : 'transparent',
+            color: region === 'south' ? '#fff' : 'var(--text-secondary)',
+          }}
+        >جنوب</button>
+        <button
+          onClick={() => setRegion('north')}
+          className="px-2.5 py-1.5 transition-colors"
+          style={{
+            background: region === 'north' ? 'linear-gradient(135deg,#0e7490,#155e75)' : 'transparent',
+            color: region === 'north' ? '#fff' : 'var(--text-secondary)',
+          }}
+        >شمال</button>
       </div>
 
       {/* Language toggle */}

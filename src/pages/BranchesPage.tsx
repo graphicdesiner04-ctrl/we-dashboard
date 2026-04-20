@@ -6,6 +6,7 @@ import { useEmployees }   from '@/hooks/useEmployees'
 import { useSchedule }    from '@/hooks/useSchedule'
 import { getAssignmentsByDate, getEmployeeDays } from '@/core/dataEngine'
 import { getEmpName }     from '@/data/seedData'
+import { useRegion }      from '@/context/RegionContext'
 import type { Branch, AssignmentHistory } from '@/types/hr'
 import type { BranchInput }     from '@/hooks/useBranches'
 import type { AssignmentInput } from '@/hooks/useAssignments'
@@ -258,9 +259,18 @@ function AssignmentModal({ editing, branches, employeeId, onClose, onSave }: Ass
 // ── Main Page ─────────────────────────────────────────────────────────────
 
 export default function BranchesPage() {
-  const { branches, addBranch, updateBranch, deleteBranch } = useBranches()
+  const { region } = useRegion()
+  const { branches: allBranches, addBranch, updateBranch, deleteBranch } = useBranches()
+  const branches = useMemo(
+    () => allBranches.filter(b => (b.region ?? 'south') === region),
+    [allBranches, region],
+  )
   const { assignments, addAssignment, updateAssignment, deleteAssignment } = useAssignments()
-  const { employees } = useEmployees()
+  const { employees: allEmployees } = useEmployees()
+  const employees = useMemo(
+    () => allEmployees.filter(e => (e.region ?? 'south') === region),
+    [allEmployees, region],
+  )
 
   const [branchModal,     setBranchModal]     = useState(false)
   const [branchEdit,      setBranchEdit]      = useState<Branch | null>(null)
@@ -275,7 +285,7 @@ export default function BranchesPage() {
   const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
 
   // Schedule = single source of truth (reactive on entries)
-  const { entries } = useSchedule()
+  const { entries } = useSchedule(region)
   const today = new Date().toISOString().slice(0, 10)
 
   // getAssignmentsByDate: branchId → Employee[] from schedule

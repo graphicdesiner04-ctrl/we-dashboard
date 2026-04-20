@@ -1,6 +1,11 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import type { Employee, Branch, ScheduleEntry, ScheduleAlert, ScheduleCellType } from '@/types/hr'
-import { EMPLOYEES, BRANCHES, SEED_SCHEDULE_ENTRIES, FIRST_SCHEDULE_ENTRIES } from '@/data/seedData'
+import type { Employee, Branch, ScheduleEntry, ScheduleAlert, ScheduleCellType, Region } from '@/types/hr'
+import {
+  EMPLOYEES, BRANCHES, SEED_SCHEDULE_ENTRIES, FIRST_SCHEDULE_ENTRIES,
+  NORTH_EMPLOYEES, NORTH_BRANCHES,
+} from '@/data/seedData'
+import { NORTH_Q1_ENTRIES } from '@/data/northScheduleQ1'
+import { NORTH_Q2_ENTRIES } from '@/data/northScheduleQ2'
 import { storage } from '@/lib/storage'
 
 function uid() {
@@ -8,43 +13,51 @@ function uid() {
 }
 
 export type ScheduleInput = {
-  employeeId: string
-  branchId?:  string
-  date:       string
-  cellType:   ScheduleCellType
-  startTime?: string
-  endTime?:   string
-  note:       string
+  employeeId:          string
+  branchId?:           string
+  date:                string
+  cellType:            ScheduleCellType
+  startTime?:          string
+  endTime?:            string
+  note:                string
+  swapWithEmployeeId?: string   // for 'swap' type
 }
 
-export function useSchedule() {
-  const [employees] = useState<Employee[]>(
-    () => storage.get<Employee[]>('employees', EMPLOYEES),
-  )
-  const [branches] = useState<Branch[]>(
-    () => storage.get<Branch[]>('branches', BRANCHES),
-  )
+export function useSchedule(region: Region = 'south') {
+  const storageKey = region === 'north' ? 'north-schedule-entries' : 'schedule-entries'
+
+  const [employees] = useState<Employee[]>(() => {
+    const all = storage.get<Employee[]>('employees', region === 'north' ? NORTH_EMPLOYEES : EMPLOYEES)
+    return all.filter(e => (e.region ?? 'south') === region)
+  })
+
+  const [branches] = useState<Branch[]>(() => {
+    const all = storage.get<Branch[]>('branches', region === 'north' ? NORTH_BRANCHES : BRANCHES)
+    return all.filter(b => (b.region ?? 'south') === region)
+  })
 
   const [entries, setEntries] = useState<ScheduleEntry[]>(() => {
-    // All seed entries (permanent — Dec 2025 → Jun 2026)
-    const ALL_SEEDS = [
-      ...(FIRST_SCHEDULE_ENTRIES  as unknown as ScheduleEntry[]),
-      ...(SEED_SCHEDULE_ENTRIES   as unknown as ScheduleEntry[]),
-    ]
+    // Seed entries for this region
+    const ALL_SEEDS: ScheduleEntry[] = region === 'north'
+      ? [
+          ...(NORTH_Q1_ENTRIES as unknown as ScheduleEntry[]),
+          ...(NORTH_Q2_ENTRIES as unknown as ScheduleEntry[]),
+        ]
+      : [
+          ...(FIRST_SCHEDULE_ENTRIES as unknown as ScheduleEntry[]),
+          ...(SEED_SCHEDULE_ENTRIES  as unknown as ScheduleEntry[]),
+        ]
 
-    const raw = storage.get<ScheduleEntry[] | null>('schedule-entries', null)
+    const raw = storage.get<ScheduleEntry[] | null>(storageKey, null)
     if (raw !== null && Array.isArray(raw)) {
-      // Merge: keep user-added entries, then add any seed entries that aren't already present
       const existingIds = new Set(raw.map(e => e.id))
       const missing = ALL_SEEDS.filter(s => !existingIds.has(s.id))
-      const merged  = [...raw.map(e => ({ ...e, cellType: e.cellType ?? 'branch' })), ...missing]
-      return merged
+      return [...raw.map(e => ({ ...e, cellType: e.cellType ?? 'branch' })), ...missing]
     }
-    // First visit (no localStorage yet) — start from full seed
     return ALL_SEEDS
   })
 
-  useEffect(() => { storage.set('schedule-entries', entries) }, [entries])
+  useEffect(() => { storage.set(storageKey, entries) }, [entries, storageKey])
 
   const addEntry = useCallback((input: ScheduleInput) => {
     setEntries(prev => [...prev, { id: uid(), ...input, note: input.note ?? '', createdAt: new Date().toISOString() }])

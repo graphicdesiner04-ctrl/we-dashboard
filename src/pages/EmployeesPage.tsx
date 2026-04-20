@@ -4,6 +4,7 @@ import { useEmployees } from '@/hooks/useEmployees'
 import { useSchedule }  from '@/hooks/useSchedule'
 import { getAllEmployees } from '@/core/dataEngine'
 import { getEmpName }   from '@/data/seedData'
+import { useRegion }    from '@/context/RegionContext'
 import type { Employee, EmployeeRole } from '@/types/hr'
 import type { EmployeeInput } from '@/hooks/useEmployees'
 
@@ -196,16 +197,20 @@ function EmployeeModal({
 // ── Main Page ─────────────────────────────────────────────────────────────
 
 export default function EmployeesPage() {
+  const { region } = useRegion()
   // CRUD operations on profile registry
   const { addEmployee, updateEmployee, deleteEmployee } = useEmployees()
 
   // Reactive schedule entries — re-derive employees whenever schedule changes
-  const { entries } = useSchedule()
+  const { entries } = useSchedule(region)
 
-  // employees = only those who appear in at least one schedule entry
-  // Source of truth = schedule, not static array
+  // employees = only those who appear in at least one schedule entry, filtered by region
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const employees = useMemo(() => getAllEmployees(), [entries])
+  const allEmployees = useMemo(() => getAllEmployees(), [entries])
+  const employees = useMemo(
+    () => allEmployees.filter(e => (e.region ?? 'south') === region),
+    [allEmployees, region],
+  )
 
   const [modalOpen,   setModalOpen]   = useState(false)
   const [editTarget,  setEditTarget]  = useState<Employee | null>(null)

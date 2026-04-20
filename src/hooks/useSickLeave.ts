@@ -1,8 +1,10 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { Employee, Branch, SickLeaveRecord } from '@/types/hr'
-import { EMPLOYEES, BRANCHES, SICK_LEAVE_INITIAL } from '@/data/seedData'
+import { SICK_LEAVE_INITIAL } from '@/data/seedData'
 import { getCurrentBranchId } from '@/hooks/useAssignments'
 import { storage } from '@/lib/storage'
+import { useRegion } from '@/context/RegionContext'
+import { loadAllEmployees, loadAllBranches } from '@/lib/regionHelpers'
 
 function r2(n: number) { return Math.round(n * 100) / 100 }
 
@@ -35,20 +37,33 @@ export interface SickLeaveSummary {
 export interface SickLeaveKPI {
   totalEmployees:  number
   totalDaysUsed:   number
-  employeesUsed:   number   // how many have ≥1 record this year
+  employeesUsed:   number
 }
 
 export function useSickLeave() {
-  const [employees] = useState<Employee[]>(
-    () => storage.get<Employee[]>('employees', EMPLOYEES),
-  )
-  const [branches] = useState<Branch[]>(
-    () => storage.get<Branch[]>('branches', BRANCHES),
+  const { region } = useRegion()
+
+  const [allEmployees] = useState<Employee[]>(loadAllEmployees)
+  const employees = useMemo(
+    () => allEmployees.filter(e => (e.region ?? 'south') === region),
+    [allEmployees, region],
   )
 
-  const [records, setRecords] = useState<SickLeaveRecord[]>(
-    () => storage.get<SickLeaveRecord[]>('sl-records', SICK_LEAVE_INITIAL),
+  const [allBranches] = useState<Branch[]>(loadAllBranches)
+  const branches = useMemo(
+    () => allBranches.filter(b => (b.region ?? 'south') === region),
+    [allBranches, region],
   )
+
+  const [records, setRecords] = useState<SickLeaveRecord[]>(() => {
+    const raw = storage.get<SickLeaveRecord[] | null>('sl-records', null)
+    if (raw !== null && Array.isArray(raw)) {
+      const existingIds = new Set(raw.map(r => r.id))
+      const missing = SICK_LEAVE_INITIAL.filter(s => !existingIds.has(s.id))
+      return [...raw, ...missing]
+    }
+    return [...SICK_LEAVE_INITIAL]
+  })
 
   useEffect(() => { storage.set('sl-records', records) }, [records])
 
@@ -89,9 +104,9 @@ export function useSickLeave() {
 
   const kpi = useMemo((): SickLeaveKPI => ({
     totalEmployees: employees.length,
-    totalDaysUsed:  r2(currentYearRecords.reduce((s, r) => s + r.days, 0)),
+    totalDaysUsed:  r2(summaries.reduce((s, e) => s + e.totalDaysUsed, 0)),
     employeesUsed:  summaries.filter(s => s.recordsCount > 0).length,
-  }), [employees, currentYearRecords, summaries])
+  }), [employees, summaries])
 
   return {
     employees, branches, records, currentYearRecords,

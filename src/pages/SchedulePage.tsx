@@ -1,18 +1,22 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import {
   CalendarDays, Plus, Pencil, Trash2, X, Save,
   AlertTriangle, Bell, Upload, ChevronLeft, ChevronRight,
   Download, Search, Repeat2, BarChart2,
 } from 'lucide-react'
-import { useSchedule }   from '@/hooks/useSchedule'
-import { useChangeOU }   from '@/hooks/useChangeOU'
-import { useDataEngine } from '@/hooks/useDataEngine'
+import { useSchedule }      from '@/hooks/useSchedule'
+import { useChangeOU }      from '@/hooks/useChangeOU'
+import { useDataEngine }    from '@/hooks/useDataEngine'
+import { useWorkingDayOff } from '@/hooks/useWorkingDayOff'
+import { useRegion }        from '@/context/RegionContext'
+import type { Region }      from '@/types/hr'
 import type { OUChangeAlert } from '@/hooks/useDataEngine'
-import { getEmpName }    from '@/data/seedData'
+import { getEmpName }       from '@/data/seedData'
 import type { ScheduleEntry, ScheduleCellType, ChangeOURecord } from '@/types/hr'
 import type { ScheduleInput } from '@/hooks/useSchedule'
 import type { ChangeOUInput } from '@/hooks/useChangeOU'
+import type { WorkingDayOffInput } from '@/hooks/useWorkingDayOff'
 
 const WE = '#6B21A8'
 
@@ -33,6 +37,7 @@ const COU_DEFAULTS = {
 // ── Branch cell colors ────────────────────────────────────────────────────
 
 const BRANCH_CELL: Record<string, { bg: string; fg: string; short: string }> = {
+  // South Menia
   'br-01': { bg: 'rgba(220,38,38,0.22)',   fg: '#fca5a5', short: 'ملوى'    },
   'br-02': { bg: 'rgba(124,58,237,0.22)',  fg: '#c4b5fd', short: 'دير مواس'},
   'br-03': { bg: 'rgba(22,163,74,0.22)',   fg: '#86efac', short: 'دلجا'    },
@@ -41,6 +46,13 @@ const BRANCH_CELL: Record<string, { bg: string; fg: string; short: string }> = {
   'br-06': { bg: 'rgba(161,98,7,0.25)',    fg: '#fde047', short: 'منيا ج.' },
   'br-07': { bg: 'rgba(63,98,18,0.28)',    fg: '#bef264', short: 'بني أحمد'},
   'br-08': { bg: 'rgba(30,64,175,0.25)',   fg: '#93c5fd', short: 'صفط'     },
+  // North Menia
+  'br-n01': { bg: 'rgba(14,116,144,0.25)',  fg: '#67e8f9', short: 'سمالوط'  },
+  'br-n02': { bg: 'rgba(6,78,59,0.28)',     fg: '#6ee7b7', short: 'بني مزار'},
+  'br-n03': { bg: 'rgba(194,65,12,0.25)',   fg: '#fdba74', short: 'مغاغة'   },
+  'br-n04': { bg: 'rgba(109,40,217,0.25)',  fg: '#ddd6fe', short: 'المنيا م.'},
+  'br-n05': { bg: 'rgba(31,41,55,0.35)',    fg: '#d1d5db', short: 'العدوة'  },
+  'br-n06': { bg: 'rgba(180,83,9,0.25)',    fg: '#fcd34d', short: 'مطاي'    },
 }
 
 type CellStyle = { bg: string; fg: string; label: string; sub?: string }
@@ -55,6 +67,7 @@ function cellStyle(entry: ScheduleEntry, branchName?: string): CellStyle {
       const s = entry.branchId ? BRANCH_CELL[entry.branchId] : null
       return { bg: s?.bg ?? 'rgba(245,158,11,0.18)', fg: s?.fg ?? '#fcd34d', label: '(زيارة)', sub: s?.short ?? branchName }
     }
+    case 'swap':  return { bg: 'rgba(20,184,166,0.22)', fg: '#5eead4', label: '↔ تبديل', sub: entry.note.slice(0, 12) || undefined }
     case 'note':  return { bg: 'rgba(107,33,168,0.18)', fg: '#c4b5fd', label: entry.note.slice(0, 16) || '—' }
     case 'empty': return { bg: 'transparent', fg: '#4b5563', label: '' }
     case 'branch': {
@@ -98,6 +111,7 @@ function todayStr() { return new Date().toISOString().slice(0, 10) }
 
 const CELL_TYPE_LABELS: { value: ScheduleCellType; label: string }[] = [
   { value: 'branch',  label: 'عمل في فرع'       },
+  { value: 'swap',    label: '↔ تبديل يوم'       },
   { value: 'off',     label: 'إجازة / راحة'      },
   { value: 'annual',  label: 'إجازة سنوية'       },
   { value: 'sick',    label: 'إجازة مرضية'       },
@@ -107,34 +121,67 @@ const CELL_TYPE_LABELS: { value: ScheduleCellType; label: string }[] = [
 ]
 
 function EntryModal({
-  editing, fixedEmployee, fixedDate, employees, branches, onClose, onSave, onDelete,
+  editing, fixedEmployee, fixedDate, employees, branches, onClose, onSave, onSavePair, onDelete,
 }: {
-  editing:       ScheduleEntry | null
-  fixedEmployee: string | null
-  fixedDate:     string | null
-  employees:     ReturnType<typeof useSchedule>['employees']
-  branches:      ReturnType<typeof useSchedule>['branches']
-  onClose:       () => void
-  onSave:        (input: ScheduleInput) => void
-  onDelete?:     () => void
+  editing:        ScheduleEntry | null
+  fixedEmployee:  string | null
+  fixedDate:      string | null
+  employees:      ReturnType<typeof useSchedule>['employees']
+  branches:       ReturnType<typeof useSchedule>['branches']
+  onClose:        () => void
+  onSave:         (input: ScheduleInput) => void
+  onSavePair?:    (a: ScheduleInput, b: ScheduleInput) => void
+  onDelete?:      () => void
 }) {
   const isNew = !editing
-  const [employeeId, setEmployeeId] = useState(editing?.employeeId ?? fixedEmployee ?? '')
-  const [cellType,   setCellType]   = useState<ScheduleCellType>(editing?.cellType ?? 'branch')
-  const [branchId,   setBranchId]   = useState(editing?.branchId   ?? '')
-  const [date,       setDate]       = useState(editing?.date        ?? fixedDate ?? todayStr())
-  const [startTime,  setStartTime]  = useState(editing?.startTime  ?? '')
-  const [endTime,    setEndTime]    = useState(editing?.endTime    ?? '')
-  const [note,       setNote]       = useState(editing?.note        ?? '')
+  const [employeeId,          setEmployeeId]          = useState(editing?.employeeId ?? fixedEmployee ?? '')
+  const [cellType,            setCellType]            = useState<ScheduleCellType>(editing?.cellType ?? 'branch')
+  const [branchId,            setBranchId]            = useState(editing?.branchId   ?? '')
+  const [date,                setDate]                = useState(editing?.date        ?? fixedDate ?? todayStr())
+  const [startTime,           setStartTime]           = useState(editing?.startTime  ?? '')
+  const [endTime,             setEndTime]             = useState(editing?.endTime    ?? '')
+  const [note,                setNote]                = useState(editing?.note        ?? '')
+  const [swapWithEmployeeId,  setSwapWithEmployeeId]  = useState(editing?.swapWithEmployeeId ?? '')
+  const [addPairedEntry,      setAddPairedEntry]      = useState(false)
 
-  const showBranch = cellType === 'branch' || cellType === 'visit'
-  const showTime   = cellType === 'branch' || cellType === 'visit'
+  const showBranch = cellType === 'branch' || cellType === 'visit' || cellType === 'swap'
+  const showTime   = cellType === 'branch' || cellType === 'visit' || cellType === 'swap'
   const showNote   = cellType !== 'empty'
+  const isSwap     = cellType === 'swap'
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!employeeId || !date) return
-    onSave({ employeeId, branchId: branchId || undefined, date, cellType, startTime: startTime || undefined, endTime: endTime || undefined, note })
+    // Auto-build swap note if empty
+    const myEmp      = employees.find(e => e.id === employeeId)
+    const partnerEmp = employees.find(e => e.id === swapWithEmployeeId)
+    const autoNoteA  = note || (isSwap && partnerEmp ? `تبديل مع ${getEmpName(partnerEmp)}` : note)
+    const autoNoteB  = note || (isSwap && myEmp      ? `تبديل مع ${getEmpName(myEmp)}`      : note)
+
+    const inputA: ScheduleInput = {
+      employeeId,
+      branchId: branchId || undefined,
+      date, cellType,
+      startTime: startTime || undefined,
+      endTime: endTime || undefined,
+      note: autoNoteA,
+      swapWithEmployeeId: isSwap && swapWithEmployeeId ? swapWithEmployeeId : undefined,
+    }
+    // If paired entry requested (swap only, new entry, partner selected)
+    if (isNew && isSwap && addPairedEntry && swapWithEmployeeId && onSavePair) {
+      const inputB: ScheduleInput = {
+        employeeId: swapWithEmployeeId,
+        branchId: branchId || undefined,
+        date, cellType: 'swap',
+        startTime: startTime || undefined,
+        endTime: endTime || undefined,
+        note: autoNoteB,
+        swapWithEmployeeId: employeeId,
+      }
+      onSavePair(inputA, inputB)
+    } else {
+      onSave(inputA)
+    }
   }
 
   return (
@@ -188,6 +235,27 @@ function EntryModal({
               {CELL_TYPE_LABELS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
+          {/* Swap partner selector */}
+          {isSwap && (
+            <div className="rounded-xl p-3 space-y-2" style={{ background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(20,184,166,0.25)' }}>
+              <label className="block text-xs font-bold mb-1" style={{ color: '#5eead4' }}>موظف التبديل <span className="text-red-500">*</span></label>
+              <select value={swapWithEmployeeId} onChange={e => setSwapWithEmployeeId(e.target.value)} className="we-input" required={isSwap}>
+                <option value="">— اختر الموظف الآخر —</option>
+                {employees.filter(e => e.id !== employeeId).map(e => (
+                  <option key={e.id} value={e.id}>{getEmpName(e)}</option>
+                ))}
+              </select>
+              {isNew && swapWithEmployeeId && (
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={addPairedEntry} onChange={e => setAddPairedEntry(e.target.checked)}
+                    className="rounded" />
+                  <span className="text-xs font-semibold" style={{ color: '#5eead4' }}>
+                    أضف الخلية المقابلة للموظف الآخر تلقائياً
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
           {showBranch && (
             <div>
               <label className="block text-xs font-bold text-secondary mb-1">الفرع</label>
@@ -216,10 +284,12 @@ function EntryModal({
             </div>
           )}
           <div className="flex gap-3 pt-1">
-            <button type="submit" disabled={!employeeId || !date}
+            <button type="submit" disabled={!employeeId || !date || (isSwap && !swapWithEmployeeId)}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-40"
               style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
-              {isNew ? <><Plus size={14} />إضافة</> : <><Save size={14} />حفظ</>}
+              {isNew
+                ? <><Plus size={14} />{isSwap && addPairedEntry && swapWithEmployeeId ? 'إضافة الخليتين' : 'إضافة'}</>
+                : <><Save size={14} />حفظ</>}
             </button>
             <button type="button" onClick={onClose}
               className="px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-elevated transition-colors"
@@ -668,6 +738,7 @@ function MatrixGrid({ days, employees, branches, entries, onCellClick }: {
   onCellClick: (empId: string, date: string, entry: ScheduleEntry | null) => void
 }) {
   const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
+  const empMap   = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
   const agents  = useMemo(() => employees.filter(e => e.role !== 'Senior').sort((a, b) => +a.employeeCode - +b.employeeCode), [employees])
   const seniors = useMemo(() => employees.filter(e => e.role === 'Senior').sort((a, b) => +a.employeeCode - +b.employeeCode), [employees])
   const allCols = useMemo<(typeof employees[0] | null)[]>(() => [...agents, null, ...seniors], [agents, seniors])
@@ -722,7 +793,13 @@ function MatrixGrid({ days, employees, branches, entries, onCellClick }: {
                     {(() => {
                       const entry = entryIndex[`${emp.id}|${date}`] ?? null
                       const branch = entry?.branchId ? branchMap[entry.branchId] : undefined
-                      const cs = entry ? cellStyle(entry, branch?.storeNameAr || branch?.storeName) : { bg: 'transparent', fg: '#4b5563', label: '', sub: undefined }
+                      let cs = entry ? cellStyle(entry, branch?.storeNameAr || branch?.storeName) : { bg: 'transparent', fg: '#4b5563', label: '', sub: undefined }
+                      // For swap: show partner's first name as sub-label
+                      if (entry?.cellType === 'swap') {
+                        const partner = entry.swapWithEmployeeId ? empMap[entry.swapWithEmployeeId] : null
+                        const partnerShort = partner ? getEmpName(partner).split(' ')[0] : (entry.note.slice(0, 10) || '—')
+                        cs = { ...cs, label: '↔', sub: partnerShort }
+                      }
                       return cs.label ? (
                         <div style={{ background: cs.bg, color: cs.fg, borderRadius: 6, padding: '2px 4px', fontSize: 10, fontWeight: 700, textAlign: 'center', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, lineHeight: 1.2 }}>
                           <span>{cs.label}</span>
@@ -756,7 +833,7 @@ function ListView({ entries, employees, branches, onEdit, onDelete }: {
   const branchMap = Object.fromEntries(branches.map(b => [b.id, b]))
   const today     = todayStr()
   const sorted    = [...entries].sort((a, b) => a.date.localeCompare(b.date))
-  const typeLabel: Record<ScheduleCellType, string> = { branch: 'فرع', off: 'راحة', annual: 'سنوي', sick: 'مريض', visit: 'زيارة', note: 'ملاحظة', empty: '—' }
+  const typeLabel: Record<ScheduleCellType, string> = { branch: 'فرع', off: 'راحة', annual: 'سنوي', sick: 'مريض', visit: 'زيارة', note: 'ملاحظة', empty: '—', swap: '↔ تبديل' }
   if (!sorted.length) return (
     <div className="card p-12 text-center"><CalendarDays size={38} className="text-tertiary mx-auto mb-3" strokeWidth={1.4} /><p className="text-secondary font-semibold text-sm">لا توجد مناوبات</p></div>
   )
@@ -1278,12 +1355,39 @@ function ChangeOUView({ records, autoAlerts, employees, branches, onAdd, onEdit,
   )
 }
 
+// ── 6-day branch rule helpers ─────────────────────────────────────────────
+
+const SIX_DAY_BRANCHES = new Set(['br-03', 'br-07', 'br-08'])
+
+function getISOWeekKey(dateStr: string): string {
+  // Returns "YYYY-Www" for grouping weeks (iso week)
+  const d = new Date(dateStr + 'T00:00:00')
+  const thu = new Date(d)
+  thu.setDate(d.getDate() + (4 - (d.getDay() || 7)))
+  const yr = thu.getFullYear()
+  const yr1Jan = new Date(yr, 0, 1)
+  const wk = Math.ceil(((thu.getTime() - yr1Jan.getTime()) / 86400000 + 1) / 7)
+  return `${yr}-W${String(wk).padStart(2, '0')}`
+}
+
+function getFridaysInMonth(year: number, month: number): string[] {
+  const fridays: string[] = []
+  const d = new Date(year, month - 1, 1)
+  while (d.getMonth() === month - 1) {
+    if (d.getDay() === 5) fridays.push(d.toISOString().slice(0, 10))
+    d.setDate(d.getDate() + 1)
+  }
+  return fridays
+}
+
 // ── Analytics view ────────────────────────────────────────────────────────
 
-function AnalyticsView({ entries, employees, branches }: {
-  entries:   ReturnType<typeof useSchedule>['entries']
-  employees: ReturnType<typeof useSchedule>['employees']
-  branches:  ReturnType<typeof useSchedule>['branches']
+function AnalyticsView({ entries, employees, branches, wdoRecords, addWDORecord }: {
+  entries:      ReturnType<typeof useSchedule>['entries']
+  employees:    ReturnType<typeof useSchedule>['employees']
+  branches:     ReturnType<typeof useSchedule>['branches']
+  wdoRecords:   ReturnType<typeof useWorkingDayOff>['records']
+  addWDORecord: (input: WorkingDayOffInput) => void
 }) {
   const empMap    = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
   const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
@@ -1292,14 +1396,15 @@ function AnalyticsView({ entries, employees, branches }: {
   const stats = useMemo(() => {
     const byEmp: Record<string, {
       totalWork: number; totalOff: number; totalAnnual: number
-      totalSick: number; totalVisit: number
+      totalSick: number; totalVisit: number; totalSwap: number
       byBranch: Record<string, number>
     }> = {}
     for (const e of entries) {
-      if (!byEmp[e.employeeId]) byEmp[e.employeeId] = { totalWork: 0, totalOff: 0, totalAnnual: 0, totalSick: 0, totalVisit: 0, byBranch: {} }
+      if (!byEmp[e.employeeId]) byEmp[e.employeeId] = { totalWork: 0, totalOff: 0, totalAnnual: 0, totalSick: 0, totalVisit: 0, totalSwap: 0, byBranch: {} }
       const s = byEmp[e.employeeId]
       const ct = e.cellType ?? 'branch'
       if (ct === 'branch')  { s.totalWork++; if (e.branchId) s.byBranch[e.branchId] = (s.byBranch[e.branchId] || 0) + 1 }
+      if (ct === 'swap')    { s.totalSwap++; s.totalWork++; if (e.branchId) s.byBranch[e.branchId] = (s.byBranch[e.branchId] || 0) + 1 }
       if (ct === 'off')     s.totalOff++
       if (ct === 'annual')  s.totalAnnual++
       if (ct === 'sick')    s.totalSick++
@@ -1307,6 +1412,55 @@ function AnalyticsView({ entries, employees, branches }: {
     }
     return byEmp
   }, [entries])
+
+  // ── 6-day branch compensation proposals ───────────────────────────────────
+  const sixDayProposals = useMemo(() => {
+    // Group by (employeeId, YYYY-MM) → distinct ISO weeks at 6-day branches
+    const byEmpMonth: Record<string, Record<string, { weeks: Set<string>; primaryBranch: string }>> = {}
+
+    for (const e of entries) {
+      if (!e.branchId || !SIX_DAY_BRANCHES.has(e.branchId)) continue
+      const ct = e.cellType ?? 'branch'
+      if (ct !== 'branch' && ct !== 'visit' && ct !== 'swap') continue
+
+      const month = e.date.slice(0, 7)
+      const weekKey = getISOWeekKey(e.date)
+      if (!byEmpMonth[e.employeeId]) byEmpMonth[e.employeeId] = {}
+      if (!byEmpMonth[e.employeeId][month]) {
+        byEmpMonth[e.employeeId][month] = { weeks: new Set(), primaryBranch: e.branchId }
+      }
+      byEmpMonth[e.employeeId][month].weeks.add(weekKey)
+    }
+
+    type Proposal = {
+      employeeId:   string
+      month:        string   // 'YYYY-MM'
+      weeksWorked:  number
+      compEarned:   number
+      fridays:      string[] // proposed comp Fridays (YYYY-MM-DD)
+      primaryBranch: string
+    }
+
+    const proposals: Proposal[] = []
+    for (const [empId, monthMap] of Object.entries(byEmpMonth)) {
+      for (const [month, { weeks, primaryBranch }] of Object.entries(monthMap)) {
+        const weeksWorked = weeks.size
+        const compEarned  = Math.floor(weeksWorked / 2)
+        if (compEarned === 0) continue
+        const [yr, mo] = month.split('-').map(Number)
+        const allFridays = getFridaysInMonth(yr, mo)
+        proposals.push({
+          employeeId: empId, month, weeksWorked, compEarned,
+          fridays: allFridays.slice(0, compEarned),
+          primaryBranch,
+        })
+      }
+    }
+    return proposals.sort((a, b) => b.month.localeCompare(a.month))
+  }, [entries])
+
+  // WDO entries already added (for deduplication)
+  const wdoSet = useMemo(() => new Set(wdoRecords.map(r => `${r.employeeId}|${r.date}`)), [wdoRecords])
 
   // Branch coverage stats
   const branchStats = useMemo(() => {
@@ -1322,7 +1476,8 @@ function AnalyticsView({ entries, employees, branches }: {
     return byBr
   }, [entries])
 
-  const totalWork    = useMemo(() => entries.filter(e => (e.cellType ?? 'branch') === 'branch').length, [entries])
+  const totalWork    = useMemo(() => entries.filter(e => (e.cellType ?? 'branch') === 'branch' || e.cellType === 'swap').length, [entries])
+  const totalSwap    = useMemo(() => entries.filter(e => e.cellType === 'swap').length, [entries])
   const totalAnnual  = useMemo(() => entries.filter(e => e.cellType === 'annual').length, [entries])
   const totalSick    = useMemo(() => entries.filter(e => e.cellType === 'sick').length, [entries])
   const totalVisit   = useMemo(() => entries.filter(e => e.cellType === 'visit').length, [entries])
@@ -1376,13 +1531,14 @@ function AnalyticsView({ entries, employees, branches }: {
       </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6">
         {[
-          { label: 'أيام عمل',  value: totalWork,   bg: `${WE}18`,              color: WE           },
-          { label: 'راحة',      value: totalOff,    bg: 'rgba(75,85,99,0.18)',  color: '#9ca3af'    },
-          { label: 'سنوي',      value: totalAnnual, bg: 'rgba(245,158,11,0.18)',color: '#fbbf24'    },
-          { label: 'مريض',      value: totalSick,   bg: 'rgba(239,68,68,0.18)', color: '#fca5a5'    },
-          { label: 'زيارة',     value: totalVisit,  bg: 'rgba(245,158,11,0.14)',color: '#fcd34d'    },
+          { label: 'أيام عمل',  value: totalWork,   bg: `${WE}18`,                    color: WE           },
+          { label: '↔ تبديل',   value: totalSwap,   bg: 'rgba(20,184,166,0.15)',       color: '#5eead4'    },
+          { label: 'راحة',      value: totalOff,    bg: 'rgba(75,85,99,0.18)',         color: '#9ca3af'    },
+          { label: 'سنوي',      value: totalAnnual, bg: 'rgba(245,158,11,0.18)',       color: '#fbbf24'    },
+          { label: 'مريض',      value: totalSick,   bg: 'rgba(239,68,68,0.18)',        color: '#fca5a5'    },
+          { label: 'زيارة',     value: totalVisit,  bg: 'rgba(245,158,11,0.14)',       color: '#fcd34d'    },
         ].map(k => (
           <div key={k.label} className="card p-4 text-center" style={{ background: k.bg, border: `1px solid ${k.color}22` }}>
             <p className="text-2xl font-black" style={{ color: k.color }}>{k.value}</p>
@@ -1434,6 +1590,12 @@ function AnalyticsView({ entries, employees, branches }: {
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-lg"
                         style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}>
                         {s.totalAnnual} سنوي
+                      </span>
+                    )}
+                    {s.totalSwap > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-lg"
+                        style={{ background: 'rgba(20,184,166,0.15)', color: '#5eead4' }}>
+                        ↔{s.totalSwap}
                       </span>
                     )}
                     {s.totalSick > 0 && (
@@ -1495,6 +1657,91 @@ function AnalyticsView({ entries, employees, branches }: {
           })}
         </div>
       </div>
+
+      {/* 6-Day Branch Rule */}
+      {sixDayProposals.length > 0 && (
+        <div className="card overflow-hidden mb-6">
+          <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)', background: 'rgba(22,163,74,0.07)' }}>
+            <span className="text-base">📅</span>
+            <div className="flex-1">
+              <h3 className="text-xs font-black" style={{ color: '#86efac' }}>قانون فروع 6 أيام · تعويض الجمعة</h3>
+              <p className="text-[10px] text-tertiary mt-0.5">كل أسبوعين عمل في دلجا / بني أحمد / صفط الخمار = جمعة تعويضية</p>
+            </div>
+            <span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ background: 'rgba(22,163,74,0.18)', color: '#86efac' }}>
+              {sixDayProposals.reduce((s, p) => s + p.compEarned, 0)} يوم مقترح
+            </span>
+          </div>
+          <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+            {sixDayProposals.map(p => {
+              const emp       = empMap[p.employeeId]
+              const br        = branchMap[p.primaryBranch]
+              const bCell     = BRANCH_CELL[p.primaryBranch]
+              const monthLabel = new Date(p.month + '-01T00:00:00').toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })
+              return (
+                <div key={`${p.employeeId}-${p.month}`} className="px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
+                  {/* Employee + month */}
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs font-black"
+                      style={{ background: 'linear-gradient(135deg,#16A34A,#15803D)' }}>
+                      {emp ? getEmpName(emp).charAt(0) : '?'}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-primary text-sm truncate">{emp ? getEmpName(emp) : p.employeeId}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span className="text-[10px] text-tertiary">{monthLabel}</span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                          style={{ background: bCell?.bg ?? 'rgba(22,163,74,0.18)', color: bCell?.fg ?? '#86efac' }}>
+                          {br?.storeNameAr || br?.storeName || p.primaryBranch}
+                        </span>
+                        <span className="text-[10px] text-secondary">{p.weeksWorked} أسابيع</span>
+                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+                          style={{ background: 'rgba(22,163,74,0.18)', color: '#86efac' }}>
+                          {p.compEarned} جمعة تعويضية
+                        </span>
+                        {p.weeksWorked >= 4 && (
+                          <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+                            style={{ background: 'rgba(234,179,8,0.20)', color: '#fde047' }}>
+                            ⭐ شهر كامل
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Proposed Fridays with add buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    {p.fridays.map(fri => {
+                      const alreadyAdded = wdoSet.has(`${p.employeeId}|${fri}`)
+                      const friLabel = new Date(fri + 'T00:00:00').toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })
+                      return (
+                        <div key={fri} className="flex items-center gap-1">
+                          {alreadyAdded ? (
+                            <span className="text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1"
+                              style={{ background: 'rgba(22,163,74,0.15)', color: '#86efac' }}>
+                              ✓ {friLabel}
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => addWDORecord({
+                                employeeId: p.employeeId,
+                                branchId:   p.primaryBranch,
+                                date:       fri,
+                                note:       `تعويض الجمعة - قانون 6 أيام (${monthLabel})`,
+                              })}
+                              className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all hover:opacity-90 flex items-center gap-1"
+                              style={{ background: 'rgba(22,163,74,0.12)', color: '#86efac', border: '1px dashed rgba(22,163,74,0.4)' }}>
+                              + {friLabel}
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Branch coverage table */}
       <div className="card overflow-hidden">
@@ -1564,8 +1811,15 @@ function AnalyticsView({ entries, employees, branches }: {
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function SchedulePage() {
-  const { employees, branches, entries, alerts, addEntry, updateEntry, deleteEntry, resetEntries, overwriteEntries } = useSchedule()
+  const { region } = useRegion()
+  // key=region forces full remount when region changes → hooks reinitialize correctly
+  return <SchedulePageInner key={region} region={region} />
+}
+
+function SchedulePageInner({ region }: { region: Region }) {
+  const { employees, branches, entries, alerts, addEntry, addEntries, updateEntry, deleteEntry, resetEntries, overwriteEntries } = useSchedule(region)
   const { records: couRecords, addRecord: addCOU, updateRecord: updateCOU, deleteRecord: deleteCOU } = useChangeOU()
+  const { records: wdoRecords, addRecord: addWDORecord, addBulkRecords: addBulkWDORecords } = useWorkingDayOff()
   const { ouChangeAlerts: allOUAlerts } = useDataEngine()
   const today0 = new Date().toISOString().slice(0, 10)
   const ouChangeAlerts = allOUAlerts.filter(a => a.date >= today0)
@@ -1593,6 +1847,83 @@ export default function SchedulePage() {
   const [filterTo,     setFilterTo]     = useState('')
 
   const days = useMemo(() => getDaysInMonth(year, month), [year, month])
+
+  // ── Auto-add 6-day branch comp Fridays to WDO ───────────────────────────
+  useEffect(() => {
+    if (entries.length === 0) return
+
+    // Build (empId → month → distinctWeeks) map
+    const byEmpMonth: Record<string, Record<string, { weeks: Set<string>; primaryBranch: string }>> = {}
+    for (const e of entries) {
+      if (!e.branchId || !SIX_DAY_BRANCHES.has(e.branchId)) continue
+      const ct = e.cellType ?? 'branch'
+      if (ct !== 'branch' && ct !== 'visit' && ct !== 'swap') continue
+      const mon = e.date.slice(0, 7)
+      const wk  = getISOWeekKey(e.date)
+      if (!byEmpMonth[e.employeeId]) byEmpMonth[e.employeeId] = {}
+      if (!byEmpMonth[e.employeeId][mon])
+        byEmpMonth[e.employeeId][mon] = { weeks: new Set(), primaryBranch: e.branchId }
+      byEmpMonth[e.employeeId][mon].weeks.add(wk)
+    }
+
+    // Collect Fridays to add (not already in wdoRecords)
+    const wdoKeys = new Set(wdoRecords.map(r => `${r.employeeId}|${r.date}`))
+    const toAdd: import('@/hooks/useWorkingDayOff').WorkingDayOffInput[] = []
+
+    for (const [empId, monthMap] of Object.entries(byEmpMonth)) {
+      for (const [mon, { weeks, primaryBranch }] of Object.entries(monthMap)) {
+        const compEarned = Math.floor(weeks.size / 2)
+        if (compEarned === 0) continue
+        const [yr, mo] = mon.split('-').map(Number)
+        const fridays  = getFridaysInMonth(yr, mo).slice(0, compEarned)
+        for (const fri of fridays) {
+          const key = `${empId}|${fri}`
+          if (!wdoKeys.has(key)) {
+            const monthLabel = new Date(mon + '-01T00:00:00')
+              .toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })
+            toAdd.push({
+              employeeId: empId,
+              branchId:   primaryBranch,
+              date:       fri,
+              note:       `تعويض الجمعة - قانون 6 أيام (${monthLabel})`,
+            })
+            wdoKeys.add(key) // prevent duplicate within same batch
+          }
+        }
+      }
+    }
+
+    if (toAdd.length > 0) addBulkWDORecords(toAdd)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries]) // intentionally omit wdoRecords — only re-run when schedule changes
+
+  // ── 6-day branch pending comp days count (for analytics badge) ───────────
+  const pendingCompDaysCount = useMemo(() => {
+    const byEmpMonth: Record<string, Record<string, Set<string>>> = {}
+    for (const e of entries) {
+      if (!e.branchId || !SIX_DAY_BRANCHES.has(e.branchId)) continue
+      const ct = e.cellType ?? 'branch'
+      if (ct !== 'branch' && ct !== 'visit' && ct !== 'swap') continue
+      const mon = e.date.slice(0, 7)
+      const wk  = getISOWeekKey(e.date)
+      if (!byEmpMonth[e.employeeId]) byEmpMonth[e.employeeId] = {}
+      if (!byEmpMonth[e.employeeId][mon]) byEmpMonth[e.employeeId][mon] = new Set()
+      byEmpMonth[e.employeeId][mon].add(wk)
+    }
+    let total = 0
+    const wdoKeys = new Set(wdoRecords.map(r => `${r.employeeId}|${r.date}`))
+    for (const [empId, monthMap] of Object.entries(byEmpMonth)) {
+      for (const [mon, weeks] of Object.entries(monthMap)) {
+        const comp = Math.floor(weeks.size / 2)
+        if (comp === 0) continue
+        const [yr, mo] = mon.split('-').map(Number)
+        const fridays  = getFridaysInMonth(yr, mo).slice(0, comp)
+        const unAdded  = fridays.filter(f => !wdoKeys.has(`${empId}|${f}`)).length
+        total += unAdded
+      }
+    }
+    return total
+  }, [entries, wdoRecords])
 
   const monthEntries = useMemo(
     () => entries.filter(e => e.date.startsWith(`${year}-${String(month).padStart(2,'0')}`)),
@@ -1643,6 +1974,7 @@ export default function SchedulePage() {
   function openEdit(e: ScheduleEntry)               { setEditing(e); setFixedEmployee(null); setFixedDate(null); setModal(true) }
   function closeModal()                             { setModal(false); setEditing(null); setFixedEmployee(null); setFixedDate(null) }
   function handleSave(input: ScheduleInput)         { if (editing) updateEntry(editing.id, input); else addEntry(input); closeModal() }
+  function handleSavePair(a: ScheduleInput, b: ScheduleInput) { addEntries([a, b]); closeModal() }
   function handleDelete()                           { if (!editing) return; if (window.confirm('حذف هذه الخلية؟')) { deleteEntry(editing.id); closeModal() } }
   function handleCellClick(empId: string, date: string, entry: ScheduleEntry | null) { if (entry) openEdit(entry); else openAddFromCell(empId, date) }
   function handleDeleteFromList(id: string)         { if (window.confirm('حذف هذه المناوبة؟')) deleteEntry(id) }
@@ -1678,11 +2010,12 @@ export default function SchedulePage() {
   const todayDisplay = new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   const LEGEND = [
-    { label: 'راحة',   bg: 'rgba(75,85,99,0.28)',   fg: '#9ca3af' },
-    { label: 'سنوي',   bg: 'rgba(245,158,11,0.22)', fg: '#fbbf24' },
-    { label: 'مريض',   bg: 'rgba(239,68,68,0.22)',  fg: '#fca5a5' },
-    { label: 'زيارة',  bg: 'rgba(245,158,11,0.18)', fg: '#fcd34d' },
-    { label: 'ملاحظة', bg: 'rgba(107,33,168,0.18)', fg: '#c4b5fd' },
+    { label: 'راحة',    bg: 'rgba(75,85,99,0.28)',   fg: '#9ca3af' },
+    { label: 'سنوي',    bg: 'rgba(245,158,11,0.22)', fg: '#fbbf24' },
+    { label: 'مريض',    bg: 'rgba(239,68,68,0.22)',  fg: '#fca5a5' },
+    { label: 'زيارة',   bg: 'rgba(245,158,11,0.18)', fg: '#fcd34d' },
+    { label: '↔ تبديل', bg: 'rgba(20,184,166,0.22)', fg: '#5eead4' },
+    { label: 'ملاحظة',  bg: 'rgba(107,33,168,0.18)', fg: '#c4b5fd' },
     ...Object.values(BRANCH_CELL).map(s => ({ label: s.short, bg: s.bg, fg: s.fg })),
   ]
 
@@ -1724,6 +2057,22 @@ export default function SchedulePage() {
 
       <AlertBanner alerts={alerts} employees={employees} branches={branches} onGoToChangeOU={() => setView('changeou')} onCreateCOU={openCOUFromAlert} />
 
+      {/* 6-day branch comp info banner — shown once records are auto-added */}
+      {wdoRecords.filter(r => r.note.includes('قانون 6 أيام')).length > 0 && view !== 'analytics' && (
+        <button onClick={() => setView('analytics')}
+          className="w-full mb-4 flex items-center gap-3 px-4 py-3 rounded-xl text-right transition-all hover:opacity-90"
+          style={{ background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.22)' }}>
+          <span className="text-lg flex-shrink-0">📅</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-black" style={{ color: '#86efac' }}>
+              {wdoRecords.filter(r => r.note.includes('قانون 6 أيام')).length} جمعة تعويضية أُضيفت تلقائياً في «عمل يوم الإجازة» · قانون فروع 6 أيام
+            </p>
+            <p className="text-[10px] text-tertiary mt-0.5">اضغط لرؤية التفاصيل في التحليلات</p>
+          </div>
+          <span className="text-xs font-bold flex-shrink-0" style={{ color: '#86efac' }}>التحليلات ←</span>
+        </button>
+      )}
+
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         {/* Tabs */}
@@ -1742,6 +2091,15 @@ export default function SchedulePage() {
                     color: view === 'changeou' ? '#fff' : '#F59E0B',
                   }}>
                   {ouChangeAlerts.length + couRecords.length}
+                </span>
+              )}
+              {v === 'analytics' && pendingCompDaysCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-black"
+                  style={{
+                    background: view === 'analytics' ? 'rgba(255,255,255,0.2)' : 'rgba(22,163,74,0.25)',
+                    color: view === 'analytics' ? '#fff' : '#86efac',
+                  }}>
+                  {pendingCompDaysCount} جمعة
                 </span>
               )}
             </button>
@@ -1797,7 +2155,7 @@ export default function SchedulePage() {
           onDocument={openCOUFromAutoAlert}
         />
       ) : view === 'analytics' ? (
-        <AnalyticsView entries={entries} employees={employees} branches={branches} />
+        <AnalyticsView entries={entries} employees={employees} branches={branches} wdoRecords={wdoRecords} addWDORecord={addWDORecord} />
       ) : (
         <div className="card overflow-hidden">
           {view === 'matrix'
@@ -1822,7 +2180,7 @@ export default function SchedulePage() {
       {modal && (
         <EntryModal editing={editing} fixedEmployee={fixedEmployee} fixedDate={fixedDate}
           employees={employees} branches={branches}
-          onClose={closeModal} onSave={handleSave}
+          onClose={closeModal} onSave={handleSave} onSavePair={handleSavePair}
           onDelete={editing ? handleDelete : undefined} />
       )}
 

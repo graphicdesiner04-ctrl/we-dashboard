@@ -1,9 +1,11 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { Employee, Branch, AnnualLeaveRecord, AnnualLeaveSummary, AnnualLeaveKPI } from '@/types/hr'
 import { ANNUAL_LEAVE_DAYS } from '@/types/hr'
-import { EMPLOYEES, BRANCHES, ANNUAL_LEAVE_INITIAL } from '@/data/seedData'
+import { ANNUAL_LEAVE_INITIAL } from '@/data/seedData'
 import { getCurrentBranchId } from '@/hooks/useAssignments'
 import { storage } from '@/lib/storage'
+import { useRegion } from '@/context/RegionContext'
+import { loadAllEmployees, loadAllBranches } from '@/lib/regionHelpers'
 
 function r2(n: number) { return Math.round(n * 100) / 100 }
 
@@ -20,18 +22,30 @@ export type AnnualLeaveInput = {
 }
 
 export function useAnnualLeave() {
-  // Dynamic — reads from localStorage so changes from EmployeesPage / BranchesPage are picked up
-  const [employees] = useState<Employee[]>(
-    () => storage.get<Employee[]>('employees', EMPLOYEES),
-  )
-  const [branches] = useState<Branch[]>(
-    () => storage.get<Branch[]>('branches', BRANCHES),
+  const { region } = useRegion()
+
+  const [allEmployees] = useState<Employee[]>(loadAllEmployees)
+  const employees = useMemo(
+    () => allEmployees.filter(e => (e.region ?? 'south') === region),
+    [allEmployees, region],
   )
 
-  // Seeded with real records from the Google Sheet
-  const [records, setRecords] = useState<AnnualLeaveRecord[]>(
-    () => storage.get<AnnualLeaveRecord[]>('al-records', ANNUAL_LEAVE_INITIAL),
+  const [allBranches] = useState<Branch[]>(loadAllBranches)
+  const branches = useMemo(
+    () => allBranches.filter(b => (b.region ?? 'south') === region),
+    [allBranches, region],
   )
+
+  // Merge strategy: keep existing user records + inject any missing seeds by ID
+  const [records, setRecords] = useState<AnnualLeaveRecord[]>(() => {
+    const raw = storage.get<AnnualLeaveRecord[] | null>('al-records', null)
+    if (raw !== null && Array.isArray(raw)) {
+      const existingIds = new Set(raw.map(r => r.id))
+      const missing = ANNUAL_LEAVE_INITIAL.filter(s => !existingIds.has(s.id))
+      return [...raw, ...missing]
+    }
+    return [...ANNUAL_LEAVE_INITIAL]
+  })
 
   useEffect(() => { storage.set('al-records', records) }, [records])
 
@@ -72,7 +86,7 @@ export function useAnnualLeave() {
   )
 
   const kpi = useMemo((): AnnualLeaveKPI => {
-    const totalUsed = r2(currentYearRecords.reduce((s, r) => s + r.days, 0))
+    const totalUsed = r2(summaries.reduce((s, e) => s + e.totalDaysUsed, 0))
     return {
       totalEmployees: employees.length,
       totalDaysUsed: totalUsed,

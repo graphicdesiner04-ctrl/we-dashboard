@@ -1,13 +1,15 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { EMPLOYEES, BRANCHES, EVAL_SEED_RECORDS } from '@/data/seedData'
+import { EVAL_SEED_RECORDS } from '@/data/seedData'
 import { storage } from '@/lib/storage'
 import type { Employee, Branch } from '@/types/hr'
+import { useRegion } from '@/context/RegionContext'
+import { loadAllEmployees, loadAllBranches } from '@/lib/regionHelpers'
 
 export type EvaluationRecord = {
   id:         string
   employeeId: string
   note:       string
-  score:      number   // موجب = إيجابي / سالب = سلبي (قيمة الدرجات)
+  score:      number
   date:       string   // YYYY-MM-DD
   branchId?:  string
   createdAt:  string
@@ -17,9 +19,9 @@ export type EvaluationInput = Omit<EvaluationRecord, 'id' | 'createdAt'>
 
 export type EmployeeEvalSummary = {
   employee:           Employee
-  totalPositiveDeg:   number   // مجموع الدرجات الإيجابية
-  totalNegativeDeg:   number   // مجموع الدرجات السلبية (قيمة مطلقة)
-  netScore:           number   // الصافي
+  totalPositiveDeg:   number
+  totalNegativeDeg:   number
+  netScore:           number
   records:            EvaluationRecord[]
 }
 
@@ -28,16 +30,29 @@ function uid() {
 }
 
 export function useEvaluation() {
-  const [employees] = useState<Employee[]>(
-    () => storage.get<Employee[]>('employees', EMPLOYEES),
-  )
-  const [branches] = useState<Branch[]>(
-    () => storage.get<Branch[]>('branches', BRANCHES.filter(b => b.id !== 'br-09')),
+  const { region } = useRegion()
+
+  const [allEmployees] = useState<Employee[]>(loadAllEmployees)
+  const employees = useMemo(
+    () => allEmployees.filter(e => (e.region ?? 'south') === region),
+    [allEmployees, region],
   )
 
-  const [records, setRecords] = useState<EvaluationRecord[]>(
-    () => storage.get<EvaluationRecord[]>('eval-records', EVAL_SEED_RECORDS),
+  const [allBranches] = useState<Branch[]>(loadAllBranches)
+  const branches = useMemo(
+    () => allBranches.filter(b => (b.region ?? 'south') === region),
+    [allBranches, region],
   )
+
+  const [records, setRecords] = useState<EvaluationRecord[]>(() => {
+    const raw = storage.get<EvaluationRecord[] | null>('eval-records', null)
+    if (raw !== null && Array.isArray(raw)) {
+      const existingIds = new Set(raw.map(r => r.id))
+      const missing = EVAL_SEED_RECORDS.filter(s => !existingIds.has(s.id))
+      return [...raw, ...missing]
+    }
+    return [...EVAL_SEED_RECORDS]
+  })
 
   useEffect(() => { storage.set('eval-records', records) }, [records])
 
@@ -53,20 +68,21 @@ export function useEvaluation() {
     setRecords(prev => prev.filter(r => r.id !== id))
   }, [])
 
+  const empIds = useMemo(() => new Set(employees.map(e => e.id)), [employees])
+
   const year  = new Date().getFullYear().toString()
-  const month = new Date().toISOString().slice(0, 7)  // YYYY-MM
+  const month = new Date().toISOString().slice(0, 7)
 
   const currentYearRecords = useMemo(
-    () => records.filter(r => r.date.startsWith(year)),
-    [records, year],
+    () => records.filter(r => r.date.startsWith(year) && empIds.has(r.employeeId)),
+    [records, year, empIds],
   )
 
   const currentMonthRecords = useMemo(
-    () => records.filter(r => r.date.startsWith(month)),
-    [records, month],
+    () => records.filter(r => r.date.startsWith(month) && empIds.has(r.employeeId)),
+    [records, month, empIds],
   )
 
-  // Per-employee summary — مجموع الدرجات (مش عدد التقييمات)
   const summaries = useMemo((): EmployeeEvalSummary[] =>
     employees
       .map(emp => {

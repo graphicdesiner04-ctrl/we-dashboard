@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect } from 'react'
 import type { Employee, EmployeeRole } from '@/types/hr'
-import { EMPLOYEES } from '@/data/seedData'
+import { EMPLOYEES, NORTH_EMPLOYEES } from '@/data/seedData'
 import { storage } from '@/lib/storage'
+
+const ALL_EMPLOYEES = [...EMPLOYEES, ...NORTH_EMPLOYEES]
 
 export type EmployeeInput = {
   domainName: string
@@ -23,9 +25,15 @@ function uid() {
 }
 
 export function useEmployees() {
-  const [employees, setEmployees] = useState<Employee[]>(
-    () => storage.get<Employee[]>('employees', EMPLOYEES),
-  )
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    const raw = storage.get<Employee[] | null>('employees', null)
+    if (raw !== null && Array.isArray(raw)) {
+      const existingIds = new Set(raw.map(e => e.id))
+      const missing = ALL_EMPLOYEES.filter(e => !existingIds.has(e.id))
+      return missing.length > 0 ? [...raw, ...missing] : raw
+    }
+    return [...ALL_EMPLOYEES]
+  })
 
   useEffect(() => { storage.set('employees', employees) }, [employees])
 

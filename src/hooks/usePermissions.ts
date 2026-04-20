@@ -1,9 +1,11 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { Employee, Branch, PermissionRecord, EmployeeSummary, PermissionsKPI } from '@/types/hr'
 import { MONTHLY_LIMIT_HOURS } from '@/types/hr'
-import { EMPLOYEES, BRANCHES, PERMISSION_INITIAL } from '@/data/seedData'
+import { PERMISSION_INITIAL } from '@/data/seedData'
 import { getCurrentBranchId } from '@/hooks/useAssignments'
 import { storage } from '@/lib/storage'
+import { useRegion } from '@/context/RegionContext'
+import { loadAllEmployees, loadAllBranches } from '@/lib/regionHelpers'
 
 function r2(n: number) { return Math.round(n * 100) / 100 }
 
@@ -28,17 +30,30 @@ export type PermissionInput = {
 }
 
 export function usePermissions() {
-  // Dynamic — reads from localStorage so changes from EmployeesPage / BranchesPage are picked up
-  const [employees] = useState<Employee[]>(
-    () => storage.get<Employee[]>('employees', EMPLOYEES),
-  )
-  const [branches] = useState<Branch[]>(
-    () => storage.get<Branch[]>('branches', BRANCHES),
+  const { region } = useRegion()
+
+  const [allEmployees] = useState<Employee[]>(loadAllEmployees)
+  const employees = useMemo(
+    () => allEmployees.filter(e => (e.region ?? 'south') === region),
+    [allEmployees, region],
   )
 
-  const [records, setRecords] = useState<PermissionRecord[]>(() =>
-    storage.get<PermissionRecord[]>('records', PERMISSION_INITIAL),
+  const [allBranches] = useState<Branch[]>(loadAllBranches)
+  const branches = useMemo(
+    () => allBranches.filter(b => (b.region ?? 'south') === region),
+    [allBranches, region],
   )
+
+  // Merge strategy: keep existing user records + inject any missing seeds by ID
+  const [records, setRecords] = useState<PermissionRecord[]>(() => {
+    const raw = storage.get<PermissionRecord[] | null>('records', null)
+    if (raw !== null && Array.isArray(raw)) {
+      const existingIds = new Set(raw.map(r => r.id))
+      const missing = PERMISSION_INITIAL.filter(s => !existingIds.has(s.id))
+      return [...raw, ...missing]
+    }
+    return [...PERMISSION_INITIAL]
+  })
 
   useEffect(() => { storage.set('records', records) }, [records])
 
@@ -81,14 +96,15 @@ export function usePermissions() {
   )
 
   const kpi = useMemo((): PermissionsKPI => {
-    const totalUsed = r2(currentMonthRecords.reduce((s, r) => s + r.decimalHours, 0))
+    // Derive from summaries so it's automatically scoped to the current region
+    const totalUsed = r2(summaries.reduce((s, e) => s + e.totalDecimalHours, 0))
     return {
       totalEmployees: employees.length,
       totalUsedHours: totalUsed,
       totalRemainingHours: r2(Math.max(0, employees.length * MONTHLY_LIMIT_HOURS - totalUsed)),
       employeesOverLimit: summaries.filter(s => s.isOverLimit).length,
     }
-  }, [employees, currentMonthRecords, summaries])
+  }, [employees, summaries])
 
   return {
     employees, branches, records, currentMonthRecords,

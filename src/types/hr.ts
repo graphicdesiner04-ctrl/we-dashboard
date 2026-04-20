@@ -3,6 +3,7 @@
 
 // ── Employee (Agent sheet) ────────────────────────────────────────────────
 export type EmployeeRole = 'Senior' | 'Agent' | 'Supervisor'
+export type Region = 'south' | 'north'
 
 export interface Employee {
   id: string
@@ -18,6 +19,7 @@ export interface Employee {
   role?: EmployeeRole
   operatorAccount?: string
   dsPortalName?: string
+  region?: Region       // 'south' | 'north' — defaults to 'south'
 }
 
 // ── Branch (CSO sheet) ───────────────────────────────────────────────────
@@ -32,6 +34,7 @@ export interface Branch {
   extSenior: string
   test1: string
   test2: string
+  region?: Region       // 'south' | 'north' — defaults to 'south'
 }
 
 // ── Branch Technical Profile (Mallawy / DerMawas / Dalga sheets) ─────────
@@ -168,17 +171,18 @@ export interface InsteadOfRecord {
 
 // ── Schedule ──────────────────────────────────────────────────────────────
 // One entry = one cell in the schedule matrix (employee × date).
-export type ScheduleCellType = 'branch' | 'off' | 'annual' | 'sick' | 'visit' | 'note' | 'empty'
+export type ScheduleCellType = 'branch' | 'off' | 'annual' | 'sick' | 'visit' | 'note' | 'empty' | 'swap'
 
 export interface ScheduleEntry {
   id: string
   employeeId: string
-  branchId?: string       // required for 'branch' / 'visit'
-  date: string            // YYYY-MM-DD
+  branchId?: string            // required for 'branch' / 'visit' / 'swap'
+  date: string                 // YYYY-MM-DD
   cellType: ScheduleCellType
-  startTime?: string      // HH:MM
-  endTime?: string        // HH:MM
+  startTime?: string           // HH:MM
+  endTime?: string             // HH:MM
   note: string
+  swapWithEmployeeId?: string  // for 'swap' type — the partner employee
   createdAt: string
 }
 
