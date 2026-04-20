@@ -20,18 +20,30 @@ import type { WorkingDayOffInput } from '@/hooks/useWorkingDayOff'
 
 const WE = '#6B21A8'
 
-// ── TEData Change OU defaults (from change ou.xlsx template) ─────────────
-const COU_DEFAULTS = {
-  roleName:       'Retail Technical Specialist',
-  cashBoxClosed:  "we don't have cash box",
-  directManager:  'Raouf Emeel',
-  managerEmail:   'raouf.emeel@te.eg',
-  division:       'Raouf Emeel',                                               // col 12 = same as Direct Manager
-  department:     'إدارة الدعم الفنى بمنافذ البيع وزيارات العملاء',            // col 14
-  generalDept:    'إدارة الدعم الفنى بمنافذ البيع وزيارات العملاء',            // col 15 (same)
-  sector:         'قطاع شمال الصعيد',
-  affiliation:    'خدمة العملاء',                                              // col 17
+// ── TEData Change OU defaults — region-specific ───────────────────────────
+function getCOUDefaults(region: Region) {
+  const base = {
+    roleName:      'Retail Technical Specialist',
+    cashBoxClosed: "we don't have cash box",
+    directManager: 'Raouf Emeel',
+    managerEmail:  'raouf.emeel@te.eg',
+    division:      'Raouf Emeel',
+    sector:        'قطاع شمال الصعيد',
+    affiliation:   'خدمة العملاء',
+  }
+  if (region === 'north') return {
+    ...base,
+    department:  'الدعم الفنى بمنافذ البيع وزيارات العملاء',
+    generalDept: 'الدعم الفنى بمنافذ البيع وزيارات العملاء',
+  }
+  return {
+    ...base,
+    department:  'إدارة الدعم الفنى بمنافذ البيع وزيارات العملاء',
+    generalDept: 'إدارة الدعم الفنى بمنافذ البيع وزيارات العملاء',
+  }
 }
+// Legacy constant for module-level EMPTY_COU (south default)
+const COU_DEFAULTS = getCOUDefaults('south')
 
 
 // ── Branch cell colors ────────────────────────────────────────────────────
@@ -878,23 +890,25 @@ function ListView({ entries, employees, branches, onEdit, onDelete }: {
 
 // ── Change OU Modal ───────────────────────────────────────────────────────
 
-const EMPTY_COU: ChangeOUInput = {
-  userAccount: '', accountName: '', email: '', mobile: '', idNumber: '',
-  ...COU_DEFAULTS, oldOU: '', newOU: '',
-  oldOUCode: '', newOUCode: '', employeeNumber: '', note: '',
-}
 
-function ChangeOUModal({ editing, branches, employees, preset, onClose, onSave, onDelete }: {
-  editing:    ChangeOURecord | null
-  branches:   ReturnType<typeof useSchedule>['branches']
-  employees:  ReturnType<typeof useSchedule>['employees']
-  preset?:    Partial<ChangeOUInput>
-  onClose:    () => void
-  onSave:     (input: ChangeOUInput) => void
-  onDelete?:  () => void
+function ChangeOUModal({ editing, branches, employees, preset, couDefaults, onClose, onSave, onDelete }: {
+  editing:      ChangeOURecord | null
+  branches:     ReturnType<typeof useSchedule>['branches']
+  employees:    ReturnType<typeof useSchedule>['employees']
+  preset?:      Partial<ChangeOUInput>
+  couDefaults?: ReturnType<typeof getCOUDefaults>
+  onClose:      () => void
+  onSave:       (input: ChangeOUInput) => void
+  onDelete?:    () => void
 }) {
+  const defaults = couDefaults ?? COU_DEFAULTS
+  const emptyCOU: ChangeOUInput = {
+    userAccount: '', accountName: '', email: '', mobile: '', idNumber: '',
+    ...defaults, oldOU: '', newOU: '',
+    oldOUCode: '', newOUCode: '', employeeNumber: '', note: '',
+  }
   const [form, setForm] = useState<ChangeOUInput>(
-    editing ? { ...editing } : { ...EMPTY_COU, ...preset }
+    editing ? { ...editing } : { ...emptyCOU, ...preset }
   )
   const [, setEmpSearch] = useState(form.userAccount || '')
 
@@ -1031,15 +1045,16 @@ function ChangeOUModal({ editing, branches, employees, preset, onClose, onSave, 
 
 // ── Change OU view ────────────────────────────────────────────────────────
 
-function ChangeOUView({ records, autoAlerts, employees, branches, onAdd, onEdit, onDelete, onDocument }: {
-  records:    ChangeOURecord[]
-  autoAlerts: OUChangeAlert[]
-  employees:  ReturnType<typeof useSchedule>['employees']
-  branches:   ReturnType<typeof useSchedule>['branches']
-  onAdd:      () => void
-  onEdit:     (r: ChangeOURecord) => void
-  onDelete:   (id: string) => void
-  onDocument: (alert: OUChangeAlert) => void
+function ChangeOUView({ records, autoAlerts, employees, branches, couDefaults, onAdd, onEdit, onDelete, onDocument }: {
+  records:     ChangeOURecord[]
+  autoAlerts:  OUChangeAlert[]
+  employees:   ReturnType<typeof useSchedule>['employees']
+  branches:    ReturnType<typeof useSchedule>['branches']
+  couDefaults: ReturnType<typeof getCOUDefaults>
+  onAdd:       () => void
+  onEdit:      (r: ChangeOURecord) => void
+  onDelete:    (id: string) => void
+  onDocument:  (alert: OUChangeAlert) => void
 }) {
   const empMap    = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
   const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
@@ -1056,19 +1071,19 @@ function ChangeOUView({ records, autoAlerts, employees, branches, onAdd, onEdit,
       'Email':                  emp?.email ?? '',
       'Mobile':                 emp?.mobile ?? '',
       'ID Number':              emp?.nationalId ?? '',
-      'Role Name':              COU_DEFAULTS.roleName,
+      'Role Name':              couDefaults.roleName,
       'Old OU':                 a.fromBranch,
       'New OU':                 a.toBranch,
-      'Cash Box Closed':        COU_DEFAULTS.cashBoxClosed,
-      'Direct Manager':         COU_DEFAULTS.directManager,
-      'Division':               COU_DEFAULTS.division,
+      'Cash Box Closed':        couDefaults.cashBoxClosed,
+      'Direct Manager':         couDefaults.directManager,
+      'Division':               couDefaults.division,
       'Old OU Code':            fromBr?.ou ?? '',
       'New OU Code':            toBr?.ou ?? '',
-      'الاداره':                COU_DEFAULTS.department,
-      'الادارة العامه':         COU_DEFAULTS.generalDept,
-      'القطاع':                 COU_DEFAULTS.sector,
-      'النيابه':                COU_DEFAULTS.affiliation,
-      'ايميل المدير المباشر':  COU_DEFAULTS.managerEmail,
+      'الاداره':                couDefaults.department,
+      'الادارة العامه':         couDefaults.generalDept,
+      'القطاع':                 couDefaults.sector,
+      'النيابه':                couDefaults.affiliation,
+      'ايميل المدير المباشر':  couDefaults.managerEmail,
       'رقم العامل':             emp?.employeeCode ?? '',
     }
   }
@@ -1818,7 +1833,8 @@ export default function SchedulePage() {
 
 function SchedulePageInner({ region }: { region: Region }) {
   const { employees, branches, entries, alerts, addEntry, addEntries, updateEntry, deleteEntry, resetEntries, overwriteEntries } = useSchedule(region)
-  const { records: couRecords, addRecord: addCOU, updateRecord: updateCOU, deleteRecord: deleteCOU } = useChangeOU()
+  const { records: couRecords, addRecord: addCOU, updateRecord: updateCOU, deleteRecord: deleteCOU } = useChangeOU(region)
+  const couDefaults = getCOUDefaults(region)
   const { records: wdoRecords, addRecord: addWDORecord, addBulkRecords: addBulkWDORecords } = useWorkingDayOff()
   const { ouChangeAlerts: allOUAlerts } = useDataEngine()
   const today0 = new Date().toISOString().slice(0, 10)
@@ -2149,6 +2165,7 @@ function SchedulePageInner({ region }: { region: Region }) {
           autoAlerts={ouChangeAlerts}
           employees={employees}
           branches={branches}
+          couDefaults={couDefaults}
           onAdd={() => { setEditingCOU(null); setCouModal(true) }}
           onEdit={r => { setEditingCOU(r); setCouModal(true) }}
           onDelete={id => { if (window.confirm('حذف هذا السجل؟')) deleteCOU(id) }}
@@ -2194,6 +2211,7 @@ function SchedulePageInner({ region }: { region: Region }) {
       {couModal && (
         <ChangeOUModal
           editing={editingCOU} branches={branches} employees={employees} preset={couPreset}
+          couDefaults={couDefaults}
           onClose={() => { setCouModal(false); setEditingCOU(null); setCouPreset(undefined) }}
           onSave={handleCOUSave}
           onDelete={editingCOU ? handleCOUDelete : undefined}

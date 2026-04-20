@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import type { ChangeOURecord } from '@/types/hr'
+import type { ChangeOURecord, Region } from '@/types/hr'
 import { storage } from '@/lib/storage'
 
 function uid() {
@@ -8,11 +8,14 @@ function uid() {
 
 export type ChangeOUInput = Omit<ChangeOURecord, 'id' | 'createdAt'>
 
-export function useChangeOU() {
+export function useChangeOU(region: Region = 'south') {
+  const storageKey = region === 'north' ? 'north-change-ou-records' : 'change-ou-records'
+
   const [records, setRecords] = useState<ChangeOURecord[]>(() =>
-    storage.get<ChangeOURecord[]>('change-ou-records', [])
+    storage.get<ChangeOURecord[]>(storageKey, [])
   )
-  useEffect(() => { storage.set('change-ou-records', records) }, [records])
+
+  useEffect(() => { storage.set(storageKey, records) }, [records, storageKey])
 
   const addRecord = useCallback((input: ChangeOUInput) => {
     setRecords(prev => [...prev, { id: uid(), ...input, createdAt: new Date().toISOString() }])
