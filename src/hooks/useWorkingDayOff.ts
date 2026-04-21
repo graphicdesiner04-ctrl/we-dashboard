@@ -37,7 +37,11 @@ export function useWorkingDayOff() {
     [allBranches, region],
   )
 
-  const [records, setRecords] = useState<WorkingDayOffRecord[]>(() => {
+  // empIds for region isolation
+  const empIds = useMemo(() => new Set(employees.map(e => e.id)), [employees])
+
+  // Internal state — holds ALL records from storage (both regions)
+  const [_allRecords, _setAllRecords] = useState<WorkingDayOffRecord[]>(() => {
     const raw = storage.get<WorkingDayOffRecord[] | null>('wdo-records', null)
     if (raw !== null && Array.isArray(raw)) {
       const existingIds = new Set(raw.map(r => r.id))
@@ -47,16 +51,22 @@ export function useWorkingDayOff() {
     return [...WORKING_DAY_OFF_INITIAL]
   })
 
-  useEffect(() => { storage.set('wdo-records', records) }, [records])
+  useEffect(() => { storage.set('wdo-records', _allRecords) }, [_allRecords])
+
+  // Region-isolated records — only current region's employees
+  const records = useMemo(
+    () => _allRecords.filter(r => empIds.has(r.employeeId)),
+    [_allRecords, empIds],
+  )
 
   const addRecord = useCallback((input: WorkingDayOffInput) => {
-    setRecords(prev => [{ id: uid(), ...input, createdAt: new Date().toISOString() }, ...prev])
+    _setAllRecords(prev => [{ id: uid(), ...input, createdAt: new Date().toISOString() }, ...prev])
   }, [])
 
   const addBulkRecords = useCallback((inputs: WorkingDayOffInput[]) => {
     if (inputs.length === 0) return
     const now = new Date().toISOString()
-    setRecords(prev => {
+    _setAllRecords(prev => {
       const existing = new Set(prev.map(r => `${r.employeeId}|${r.date}`))
       const toAdd = inputs
         .filter(inp => !existing.has(`${inp.employeeId}|${inp.date}`))
@@ -66,29 +76,27 @@ export function useWorkingDayOff() {
   }, [])
 
   const updateRecord = useCallback((id: string, input: WorkingDayOffInput) => {
-    setRecords(prev => prev.map(r => r.id === id ? { ...r, ...input } : r))
+    _setAllRecords(prev => prev.map(r => r.id === id ? { ...r, ...input } : r))
   }, [])
 
   const deleteRecord = useCallback((id: string) => {
-    setRecords(prev => prev.filter(r => r.id !== id))
+    _setAllRecords(prev => prev.filter(r => r.id !== id))
   }, [])
-
-  const empIds = useMemo(() => new Set(employees.map(e => e.id)), [employees])
 
   const year  = new Date().getFullYear().toString()
   const month = String(new Date().getMonth() + 1).padStart(2, '0')
   const currentMonthPrefix = `${year}-${month}`
 
   const currentYearRecords = useMemo(
-    () => records.filter(r => r.date.startsWith(year) && empIds.has(r.employeeId)),
-    [records, year, empIds],
+    () => records.filter(r => r.date.startsWith(year)),
+    [records, year],
   )
 
   const kpi = useMemo((): WorkingDayOffKPI => ({
     totalRecords:   currentYearRecords.length,
     uniqueWorkers:  new Set(currentYearRecords.map(r => r.employeeId)).size,
-    thisMonthCount: records.filter(r => r.date.startsWith(currentMonthPrefix) && empIds.has(r.employeeId)).length,
-  }), [currentYearRecords, records, currentMonthPrefix, empIds])
+    thisMonthCount: records.filter(r => r.date.startsWith(currentMonthPrefix)).length,
+  }), [currentYearRecords, records, currentMonthPrefix])
 
   return {
     employees, branches, records, currentYearRecords,

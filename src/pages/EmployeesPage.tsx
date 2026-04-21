@@ -202,11 +202,13 @@ export default function EmployeesPage() {
   const { addEmployee, updateEmployee, deleteEmployee } = useEmployees()
 
   // Reactive schedule entries — re-derive employees whenever schedule changes
-  const { entries } = useSchedule(region)
+  const { entries, employees: scheduleEmployees } = useSchedule(region)
 
   // employees = only those who appear in at least one schedule entry, filtered by region
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const allEmployees = useMemo(() => getAllEmployees(), [entries])
+  const allEmployees = useMemo(
+    () => getAllEmployees(entries, scheduleEmployees),
+    [entries, scheduleEmployees],
+  )
   const employees = useMemo(
     () => allEmployees.filter(e => (e.region ?? 'south') === region),
     [allEmployees, region],

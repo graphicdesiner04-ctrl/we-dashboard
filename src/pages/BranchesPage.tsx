@@ -288,14 +288,20 @@ export default function BranchesPage() {
   const { entries } = useSchedule(region)
   const today = new Date().toISOString().slice(0, 10)
 
-  // getAssignmentsByDate: branchId → Employee[] from schedule
-  const assignmentsByBranch = useMemo(() => getAssignmentsByDate(today), [entries, today])
+  // getAssignmentsByDate: branchId → Employee[] from schedule (region-aware)
+  const assignmentsByBranch = useMemo(
+    () => getAssignmentsByDate(today, entries, allEmployees, allBranches),
+    [entries, today, allEmployees, allBranches],
+  )
   const todayTotal = useMemo(() =>
     [...assignmentsByBranch.values()].reduce((s, arr) => s + arr.length, 0),
   [assignmentsByBranch])
 
-  // getEmployeeDays: distinct working days per employee per branch
-  const employeeDays = useMemo(() => getEmployeeDays(), [entries])
+  // getEmployeeDays: distinct working days per employee per branch (region-aware)
+  const employeeDays = useMemo(
+    () => getEmployeeDays(entries, allEmployees, allBranches),
+    [entries, allEmployees, allBranches],
+  )
 
   const filteredBranches = useMemo(() => {
     const q = branchSearch.toLowerCase()

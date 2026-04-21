@@ -44,7 +44,11 @@ export function useEvaluation() {
     [allBranches, region],
   )
 
-  const [records, setRecords] = useState<EvaluationRecord[]>(() => {
+  // empIds for region isolation
+  const empIds = useMemo(() => new Set(employees.map(e => e.id)), [employees])
+
+  // Internal state — holds ALL records from storage (both regions)
+  const [_allRecords, _setAllRecords] = useState<EvaluationRecord[]>(() => {
     const raw = storage.get<EvaluationRecord[] | null>('eval-records', null)
     if (raw !== null && Array.isArray(raw)) {
       const existingIds = new Set(raw.map(r => r.id))
@@ -54,33 +58,37 @@ export function useEvaluation() {
     return [...EVAL_SEED_RECORDS]
   })
 
-  useEffect(() => { storage.set('eval-records', records) }, [records])
+  useEffect(() => { storage.set('eval-records', _allRecords) }, [_allRecords])
+
+  // Region-isolated records — only current region's employees
+  const records = useMemo(
+    () => _allRecords.filter(r => empIds.has(r.employeeId)),
+    [_allRecords, empIds],
+  )
 
   const addRecord = useCallback((input: EvaluationInput) => {
-    setRecords(prev => [{ id: uid(), ...input, createdAt: new Date().toISOString() }, ...prev])
+    _setAllRecords(prev => [{ id: uid(), ...input, createdAt: new Date().toISOString() }, ...prev])
   }, [])
 
   const updateRecord = useCallback((id: string, input: EvaluationInput) => {
-    setRecords(prev => prev.map(r => r.id === id ? { ...r, ...input } : r))
+    _setAllRecords(prev => prev.map(r => r.id === id ? { ...r, ...input } : r))
   }, [])
 
   const deleteRecord = useCallback((id: string) => {
-    setRecords(prev => prev.filter(r => r.id !== id))
+    _setAllRecords(prev => prev.filter(r => r.id !== id))
   }, [])
-
-  const empIds = useMemo(() => new Set(employees.map(e => e.id)), [employees])
 
   const year  = new Date().getFullYear().toString()
   const month = new Date().toISOString().slice(0, 7)
 
   const currentYearRecords = useMemo(
-    () => records.filter(r => r.date.startsWith(year) && empIds.has(r.employeeId)),
-    [records, year, empIds],
+    () => records.filter(r => r.date.startsWith(year)),
+    [records, year],
   )
 
   const currentMonthRecords = useMemo(
-    () => records.filter(r => r.date.startsWith(month) && empIds.has(r.employeeId)),
-    [records, month, empIds],
+    () => records.filter(r => r.date.startsWith(month)),
+    [records, month],
   )
 
   const summaries = useMemo((): EmployeeEvalSummary[] =>

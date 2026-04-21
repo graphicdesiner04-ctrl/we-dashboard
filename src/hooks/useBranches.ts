@@ -1,7 +1,9 @@
 import { useState, useCallback, useEffect } from 'react'
 import type { Branch } from '@/types/hr'
-import { BRANCHES } from '@/data/seedData'
+import { BRANCHES, NORTH_BRANCHES } from '@/data/seedData'
 import { storage } from '@/lib/storage'
+
+const ALL_BRANCHES = [...BRANCHES, ...NORTH_BRANCHES]
 
 export type BranchInput = {
   ou: string
@@ -20,9 +22,15 @@ function uid() {
 }
 
 export function useBranches() {
-  const [branches, setBranches] = useState<Branch[]>(
-    () => storage.get<Branch[]>('branches', BRANCHES),
-  )
+  const [branches, setBranches] = useState<Branch[]>(() => {
+    const raw = storage.get<Branch[] | null>('branches', null)
+    if (raw !== null && Array.isArray(raw)) {
+      const existingIds = new Set(raw.map(b => b.id))
+      const missing = ALL_BRANCHES.filter(b => !existingIds.has(b.id))
+      return missing.length > 0 ? [...raw, ...missing] : raw
+    }
+    return [...ALL_BRANCHES]
+  })
 
   useEffect(() => { storage.set('branches', branches) }, [branches])
 

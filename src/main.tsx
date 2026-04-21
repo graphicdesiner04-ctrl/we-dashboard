@@ -10,24 +10,39 @@ import { storage } from '@/lib/storage'
 import App from './App'
 import './index.css'
 
-// ── One-time storage initializer ──────────────────────────────────────────
-// Injects any missing seed employees / branches (e.g. after North Menia was added)
-// without wiping existing user data.
+// ── Storage initializer ───────────────────────────────────────────────────
+// Runs once at startup.
+// • South employees/branches: preserved from localStorage; missing ones injected.
+// • North employees/branches: ALWAYS replaced with latest seed data.
+//   (Domain names and OU codes may have been corrected in the seed — force refresh.)
 ;(function initializeStorage() {
-  const ALL_EMPS = [...EMPLOYEES, ...NORTH_EMPLOYEES]
+  const northEmpIds = new Set(NORTH_EMPLOYEES.map(e => e.id))
+  const northBrIds  = new Set(NORTH_BRANCHES.map(b => b.id))
+
+  // ── Employees ────────────────────────────────────────────────────────────
   const rawEmps = storage.get<{ id: string }[] | null>('employees', null)
   if (rawEmps !== null && Array.isArray(rawEmps)) {
-    const existing = new Set(rawEmps.map(e => e.id))
-    const missing  = ALL_EMPS.filter(e => !existing.has(e.id))
-    if (missing.length > 0) storage.set('employees', [...rawEmps, ...missing])
+    // Keep only South employees from storage (user may have edited them)
+    const southOnly = rawEmps.filter(e => !northEmpIds.has(e.id))
+    // Inject any missing South seed employees
+    const existingSouth = new Set(southOnly.map(e => e.id))
+    const missingSouth  = EMPLOYEES.filter(e => !existingSouth.has(e.id))
+    // Always use latest North seed data
+    storage.set('employees', [...southOnly, ...missingSouth, ...NORTH_EMPLOYEES])
+  } else if (rawEmps === null) {
+    // First run — write full combined seed
+    storage.set('employees', [...EMPLOYEES, ...NORTH_EMPLOYEES])
   }
 
-  const ALL_BRS = [...BRANCHES, ...NORTH_BRANCHES]
+  // ── Branches ─────────────────────────────────────────────────────────────
   const rawBrs = storage.get<{ id: string }[] | null>('branches', null)
   if (rawBrs !== null && Array.isArray(rawBrs)) {
-    const existing = new Set(rawBrs.map(b => b.id))
-    const missing  = ALL_BRS.filter(b => !existing.has(b.id))
-    if (missing.length > 0) storage.set('branches', [...rawBrs, ...missing])
+    const southOnly = rawBrs.filter(b => !northBrIds.has(b.id))
+    const existingSouth = new Set(southOnly.map(b => b.id))
+    const missingSouth  = BRANCHES.filter(b => !existingSouth.has(b.id))
+    storage.set('branches', [...southOnly, ...missingSouth, ...NORTH_BRANCHES])
+  } else if (rawBrs === null) {
+    storage.set('branches', [...BRANCHES, ...NORTH_BRANCHES])
   }
 })()
 

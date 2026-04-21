@@ -4,6 +4,7 @@ import AnnualLeaveKPICards from '@/components/hr/AnnualLeaveKPICards'
 import AnnualLeaveForm     from '@/components/hr/AnnualLeaveForm'
 import { useAnnualLeave }  from '@/hooks/useAnnualLeave'
 import { useSchedule }     from '@/hooks/useSchedule'
+import { useRegion }       from '@/context/RegionContext'
 import { getLeaves }       from '@/core/dataEngine'
 import { getEmpName }      from '@/data/seedData'
 import { ANNUAL_LEAVE_DAYS } from '@/types/hr'
@@ -218,9 +219,10 @@ export default function AnnualLeavePage() {
     summaries, kpi, addRecord, updateRecord, deleteRecord, resetRecords,
   } = useAnnualLeave()
 
-  // Schedule-sourced annual leaves (single source of truth)
-  const { entries } = useSchedule()
-  const scheduleLeaves = useMemo(() => getLeaves('annual'), [entries])
+  // Schedule-sourced annual leaves (single source of truth — region-aware)
+  const { region } = useRegion()
+  const { entries } = useSchedule(region)
+  const scheduleLeaves = useMemo(() => getLeaves('annual', entries, employees), [entries, employees])
 
   // Group schedule leaves by employee
   const scheduleByEmployee = useMemo(() => {

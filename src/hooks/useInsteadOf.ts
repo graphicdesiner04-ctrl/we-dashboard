@@ -48,7 +48,11 @@ export function useInsteadOf() {
     [allBranches, region],
   )
 
-  const [records, setRecords] = useState<InsteadOfRecord[]>(() => {
+  // empIds for region isolation
+  const empIds = useMemo(() => new Set(employees.map(e => e.id)), [employees])
+
+  // Internal state — holds ALL records from storage (both regions)
+  const [_allRecords, _setAllRecords] = useState<InsteadOfRecord[]>(() => {
     const raw = storage.get<InsteadOfRecord[] | null>('io-records', null)
     if (raw !== null && Array.isArray(raw)) {
       const existingIds = new Set(raw.map(r => r.id))
@@ -58,28 +62,35 @@ export function useInsteadOf() {
     return [...INSTEAD_OF_INITIAL]
   })
 
-  useEffect(() => { storage.set('io-records', records) }, [records])
+  useEffect(() => { storage.set('io-records', _allRecords) }, [_allRecords])
+
+  // Region-isolated records — only current region's employees
+  const records = useMemo(
+    () => _allRecords.filter(r => empIds.has(r.employeeId)),
+    [_allRecords, empIds],
+  )
 
   const addRecord = useCallback((input: InsteadOfInput) => {
-    setRecords(prev => [{ id: uid(), ...input, createdAt: new Date().toISOString() }, ...prev])
+    _setAllRecords(prev => [{ id: uid(), ...input, createdAt: new Date().toISOString() }, ...prev])
   }, [])
 
   const updateRecord = useCallback((id: string, input: InsteadOfInput) => {
-    setRecords(prev => prev.map(r => r.id === id ? { ...r, ...input } : r))
+    _setAllRecords(prev => prev.map(r => r.id === id ? { ...r, ...input } : r))
   }, [])
 
   const deleteRecord = useCallback((id: string) => {
-    setRecords(prev => prev.filter(r => r.id !== id))
+    _setAllRecords(prev => prev.filter(r => r.id !== id))
   }, [])
 
-  const resetRecords = useCallback(() => setRecords([]), [])
-
-  const empIds = useMemo(() => new Set(employees.map(e => e.id)), [employees])
+  const resetRecords = useCallback(() => {
+    // Only reset current region's records
+    _setAllRecords(prev => prev.filter(r => !empIds.has(r.employeeId)))
+  }, [empIds])
 
   const year = new Date().getFullYear().toString()
   const currentYearRecords = useMemo(
-    () => records.filter(r => r.date.startsWith(year) && empIds.has(r.employeeId)),
-    [records, year, empIds],
+    () => records.filter(r => r.date.startsWith(year)),
+    [records, year],
   )
 
   const summaries = useMemo((): InsteadOfSummary[] =>

@@ -55,7 +55,11 @@ export function useSickLeave() {
     [allBranches, region],
   )
 
-  const [records, setRecords] = useState<SickLeaveRecord[]>(() => {
+  // empIds for region isolation
+  const empIds = useMemo(() => new Set(employees.map(e => e.id)), [employees])
+
+  // Internal state — holds ALL records from storage (both regions)
+  const [_allRecords, _setAllRecords] = useState<SickLeaveRecord[]>(() => {
     const raw = storage.get<SickLeaveRecord[] | null>('sl-records', null)
     if (raw !== null && Array.isArray(raw)) {
       const existingIds = new Set(raw.map(r => r.id))
@@ -65,23 +69,32 @@ export function useSickLeave() {
     return [...SICK_LEAVE_INITIAL]
   })
 
-  useEffect(() => { storage.set('sl-records', records) }, [records])
+  useEffect(() => { storage.set('sl-records', _allRecords) }, [_allRecords])
+
+  // Region-isolated records — only current region's employees
+  const records = useMemo(
+    () => _allRecords.filter(r => empIds.has(r.employeeId)),
+    [_allRecords, empIds],
+  )
 
   const addRecord = useCallback((input: SickLeaveInput) => {
     const days = input.days > 0 ? input.days : daysBetween(input.fromDate, input.toDate)
-    setRecords(prev => [{ id: uid(), ...input, days, createdAt: new Date().toISOString() }, ...prev])
+    _setAllRecords(prev => [{ id: uid(), ...input, days, createdAt: new Date().toISOString() }, ...prev])
   }, [])
 
   const updateRecord = useCallback((id: string, input: SickLeaveInput) => {
     const days = input.days > 0 ? input.days : daysBetween(input.fromDate, input.toDate)
-    setRecords(prev => prev.map(r => r.id === id ? { ...r, ...input, days } : r))
+    _setAllRecords(prev => prev.map(r => r.id === id ? { ...r, ...input, days } : r))
   }, [])
 
   const deleteRecord = useCallback((id: string) => {
-    setRecords(prev => prev.filter(r => r.id !== id))
+    _setAllRecords(prev => prev.filter(r => r.id !== id))
   }, [])
 
-  const resetRecords = useCallback(() => setRecords([]), [])
+  const resetRecords = useCallback(() => {
+    // Only reset current region's records
+    _setAllRecords(prev => prev.filter(r => !empIds.has(r.employeeId)))
+  }, [empIds])
 
   const year = new Date().getFullYear().toString()
   const currentYearRecords = useMemo(

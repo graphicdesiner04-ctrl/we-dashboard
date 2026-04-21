@@ -1,10 +1,12 @@
 /**
  * useDataEngine — Central data layer
  * Schedule is the single source of truth for all derived data.
+ * Region-aware: uses the currently selected region from RegionContext.
  */
 import { useMemo } from 'react'
 import { useSchedule } from '@/hooks/useSchedule'
-import { EMPLOYEES, BRANCHES, getEmpName } from '@/data/seedData'
+import { useRegion }   from '@/context/RegionContext'
+import { EMPLOYEES, BRANCHES, NORTH_EMPLOYEES, NORTH_BRANCHES, getEmpName } from '@/data/seedData'
 import type { ScheduleEntry } from '@/types/hr'
 
 export type WorkDay = {
@@ -43,13 +45,28 @@ export type BranchStats = {
 }
 
 export function useDataEngine() {
-  const { entries } = useSchedule()
+  const { region } = useRegion()
+  const { entries } = useSchedule(region)
 
-  const branchMap = useMemo(() =>
-    Object.fromEntries(BRANCHES.map(b => [b.id, b])), [])
+  // Region-specific employee and branch maps
+  const regionEmployees = useMemo(
+    () => (region === 'north' ? NORTH_EMPLOYEES : EMPLOYEES),
+    [region],
+  )
+  const regionBranches = useMemo(
+    () => (region === 'north' ? NORTH_BRANCHES : BRANCHES),
+    [region],
+  )
 
-  const empMap = useMemo(() =>
-    Object.fromEntries(EMPLOYEES.map(e => [e.id, e])), [])
+  const branchMap = useMemo(
+    () => Object.fromEntries(regionBranches.map(b => [b.id, b])),
+    [regionBranches],
+  )
+
+  const empMap = useMemo(
+    () => Object.fromEntries(regionEmployees.map(e => [e.id, e])),
+    [regionEmployees],
+  )
 
   // ── Working days (branch + visit only, unique per emp+branch+date) ──────
   const workDays = useMemo((): WorkDay[] => {
@@ -71,7 +88,7 @@ export function useDataEngine() {
   // ── Employee stats ────────────────────────────────────────────────────
   const employeeStats = useMemo((): EmployeeStats[] => {
     const map: Record<string, EmployeeStats> = {}
-    for (const emp of EMPLOYEES) {
+    for (const emp of regionEmployees) {
       map[emp.id] = {
         employeeId: emp.id, employeeName: getEmpName(emp),
         totalWorkDays: 0, annualDays: 0, sickDays: 0, visitDays: 0, offDays: 0,
@@ -94,7 +111,7 @@ export function useDataEngine() {
       if (ct === 'off')    map[e.employeeId].offDays++
     }
     return Object.values(map).filter(s => s.totalWorkDays + s.annualDays + s.sickDays + s.offDays > 0)
-  }, [workDays, entries])
+  }, [workDays, entries, regionEmployees])
 
   // ── Branch stats ──────────────────────────────────────────────────────
   const branchStats = useMemo((): BranchStats[] => {
@@ -104,13 +121,13 @@ export function useDataEngine() {
       map[wd.branchId].days++
       map[wd.branchId].emps.add(wd.employeeId)
     }
-    return BRANCHES.filter(b => b.id !== 'br-09').map(b => ({
+    return regionBranches.map(b => ({
       branchId:      b.id,
       branchName:    b.storeNameAr || b.storeName,
       totalDays:     map[b.id]?.days ?? 0,
       employeeCount: map[b.id]?.emps.size ?? 0,
     }))
-  }, [workDays])
+  }, [workDays, regionBranches])
 
   // ── OU Change detection ───────────────────────────────────────────────
   // An OU change is needed when an employee's branch changes from one day to the next
@@ -135,7 +152,7 @@ export function useDataEngine() {
           const key = `${empId}|${prev.branchId}|${curr.branchId}|${curr.date}`
           if (!seen.has(key)) {
             seen.add(key)
-            const emp = empMap[empId]
+            const emp    = empMap[empId]
             const fromBr = branchMap[prev.branchId!]
             const toBr   = branchMap[curr.branchId!]
             alerts.push({
@@ -189,7 +206,7 @@ export function useDataEngine() {
     annualLeavesFromSchedule,
     empMap,
     branchMap,
-    EMPLOYEES: EMPLOYEES.filter(() => true),
-    BRANCHES:  BRANCHES.filter(b => b.id !== 'br-09'),
+    EMPLOYEES: regionEmployees,
+    BRANCHES:  regionBranches,
   }
 }

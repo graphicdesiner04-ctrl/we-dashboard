@@ -1,67 +1,45 @@
 /**
- * dataEngine — Schedule is the ONLY source of truth.
+ * dataEngine — Pure utility functions (no React hooks, no localStorage reads).
+ * All functions take their data as parameters — region isolation is the caller's responsibility.
  *
- * All functions read directly from localStorage (no React hooks).
- * Employees, assignments, leaves, and work-day counts are
- * ALL derived from schedule entries.
- *
- * Storage keys (prefix "we-ts-"):
- *   we-ts-schedule-entries  → ScheduleEntry[]
- *   we-ts-employees         → Employee[] (profile registry — names/emails only)
- *   we-ts-branches          → Branch[]
+ * Usage pattern in pages:
+ *   const { entries } = useSchedule(region)          // region-scoped entries
+ *   const scheduleLeaves = getLeaves('annual', entries) // pure, region-safe
  */
 
 import type { Employee, Branch, ScheduleEntry } from '@/types/hr'
+import { getEmpName } from '@/data/seedData'
+
+// ── Kept for backwards-compatibility (EmployeesPage uses this signature) ──
+// Reads from localStorage directly — only used when entries are not available.
 import { EMPLOYEES, BRANCHES } from '@/data/seedData'
+import { storage } from '@/lib/storage'
 
-const PREFIX = 'we-ts-'
-
-function read<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(PREFIX + key)
-    if (raw === null) return fallback
-    return JSON.parse(raw) as T
-  } catch {
-    return fallback
-  }
-}
-
-// ── Raw schedule entries ──────────────────────────────────────────────────
-
-function getEntries(): ScheduleEntry[] {
-  return read<ScheduleEntry[]>('schedule-entries', [])
-}
-
-// ── Employee profile registry ─────────────────────────────────────────────
-// Used only for name / email lookup. NOT the authoritative employee list.
-
-function getProfileRegistry(): Map<string, Employee> {
-  const list = read<Employee[]>('employees', EMPLOYEES)
+function getProfileRegistry(employees?: Employee[]): Map<string, Employee> {
+  const list = employees ?? storage.get<Employee[]>('employees', EMPLOYEES)
   return new Map(list.map(e => [e.id, e]))
 }
 
-// ── Branch registry ───────────────────────────────────────────────────────
-
-function getBranchRegistry(): Map<string, Branch> {
-  const list = read<Branch[]>('branches', BRANCHES).filter(b => b.id !== 'br-09')
+function getBranchRegistry(branches?: Branch[]): Map<string, Branch> {
+  const list = (branches ?? storage.get<Branch[]>('branches', BRANCHES)).filter(b => b.id !== 'br-09')
   return new Map(list.map(b => [b.id, b]))
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// PUBLIC API
+// PUBLIC API — all functions accept entries / employees / branches params
 // ─────────────────────────────────────────────────────────────────────────
 
 /**
  * getAllEmployees()
- * Returns ONLY employees who appear in at least one schedule entry.
- * List is derived from schedule — not from a static array.
+ * Returns employees who appear in at least one schedule entry.
+ * Pass the region-scoped entries from useSchedule(region).
  */
-export function getAllEmployees(): Employee[] {
-  const entries  = getEntries()
-  const profiles = getProfileRegistry()
-
-  // Unique employee IDs from schedule
-  const seenIds = new Set(entries.map(e => e.employeeId))
+export function getAllEmployees(
+  entries: ScheduleEntry[],
+  employees?: Employee[],
+): Employee[] {
+  const profiles = getProfileRegistry(employees)
+  const seenIds  = new Set(entries.map(e => e.employeeId))
 
   const result: Employee[] = []
   for (const id of seenIds) {
@@ -69,66 +47,51 @@ export function getAllEmployees(): Employee[] {
     if (profile) {
       result.push(profile)
     } else {
-      // Employee has schedule entries but no profile → create minimal stub
       result.push({
-        id,
-        user:        id,
-        domainName:  id,
-        name:        id,
-        nameEn:      id,
-        email:       '',
-        mobile:      '',
-        nationalId:  '',
-        employeeCode:'',
-        level:       8,
-        role:        'Agent',
+        id, user: id, domainName: id, name: id, nameEn: id,
+        email: '', mobile: '', nationalId: '', employeeCode: '',
+        level: 8, role: 'Agent',
       })
     }
   }
-
-  // Sort by name
-  return result.sort((a, b) => (a.name || a.nameEn || '').localeCompare(b.name || b.nameEn || '', 'ar'))
+  return result.sort((a, b) =>
+    (getEmpName(a)).localeCompare(getEmpName(b), 'ar'),
+  )
 }
 
 /**
- * getAssignmentsByDate(date)
+ * getAssignmentsByDate(date, entries, employees?, branches?)
  * Returns map of branchId → Employee[] for a given date.
- * Source: schedule entries with cellType = 'branch' | 'visit'.
  */
-export function getAssignmentsByDate(date: string): Map<string, Employee[]> {
-  const entries  = getEntries()
-  const profiles = getProfileRegistry()
-  const branches = getBranchRegistry()
-
-  const result = new Map<string, Employee[]>()
+export function getAssignmentsByDate(
+  date:       string,
+  entries:    ScheduleEntry[],
+  employees?: Employee[],
+  branches?:  Branch[],
+): Map<string, Employee[]> {
+  const profiles = getProfileRegistry(employees)
+  const bMap     = getBranchRegistry(branches)
+  const result   = new Map<string, Employee[]>()
 
   for (const e of entries) {
     if (e.date !== date) continue
     const ct = e.cellType ?? 'branch'
     if (ct !== 'branch' && ct !== 'visit') continue
     if (!e.branchId) continue
-    if (!branches.has(e.branchId)) continue  // skip removed branches (br-09)
+    if (!bMap.has(e.branchId)) continue
 
     const emp = profiles.get(e.employeeId) ?? {
       id: e.employeeId, user: e.employeeId, domainName: e.employeeId,
       name: e.employeeId, nameEn: e.employeeId,
       email: '', mobile: '', nationalId: '', employeeCode: '', level: 8, role: 'Agent' as const,
     }
-
     const arr = result.get(e.branchId) ?? []
-    // Deduplicate
     if (!arr.some(x => x.id === emp.id)) arr.push(emp)
     result.set(e.branchId, arr)
   }
-
   return result
 }
 
-/**
- * getLeaves()
- * Returns all leave entries from schedule.
- * type: 'annual' | 'sick' | 'casual' | 'off'
- */
 export type LeaveEntry = {
   employeeId:   string
   employeeName: string
@@ -138,13 +101,20 @@ export type LeaveEntry = {
   note:         string
 }
 
-export function getLeaves(type?: string): LeaveEntry[] {
-  const entries  = getEntries()
-  const profiles = getProfileRegistry()
-
+/**
+ * getLeaves(type?, entries, employees?)
+ * Returns leave entries from schedule, optionally filtered by type.
+ */
+export function getLeaves(
+  type?:      string,
+  entries?:   ScheduleEntry[],
+  employees?: Employee[],
+): LeaveEntry[] {
+  const allEntries = entries ?? []
+  const profiles   = getProfileRegistry(employees)
   const LEAVE_TYPES = new Set(['annual', 'sick', 'casual', 'off'])
 
-  return entries
+  return allEntries
     .filter(e => {
       const ct = e.cellType ?? 'branch'
       if (!LEAVE_TYPES.has(ct)) return false
@@ -155,7 +125,7 @@ export function getLeaves(type?: string): LeaveEntry[] {
       const prof = profiles.get(e.employeeId)
       return {
         employeeId:   e.employeeId,
-        employeeName: prof?.name || prof?.nameEn || e.employeeId,
+        employeeName: prof ? getEmpName(prof) : e.employeeId,
         date:         e.date,
         type:         e.cellType ?? 'branch',
         branchId:     e.branchId ?? '',
@@ -165,11 +135,6 @@ export function getLeaves(type?: string): LeaveEntry[] {
     .sort((a, b) => b.date.localeCompare(a.date))
 }
 
-/**
- * getEmployeeDays()
- * Returns distinct working days per employee per branch.
- * Counts unique (employeeId, branchId, date) — no double-counting.
- */
 export type EmployeeDaySummary = {
   employeeId:   string
   employeeName: string
@@ -178,45 +143,48 @@ export type EmployeeDaySummary = {
   days:         number
 }
 
-export function getEmployeeDays(): EmployeeDaySummary[] {
-  const entries  = getEntries()
-  const profiles = getProfileRegistry()
-  const branches = getBranchRegistry()
-
-  // Unique key set to avoid counting duplicates
-  const seen  = new Set<string>()
-  const counts = new Map<string, number>()  // key → count
+/**
+ * getEmployeeDays(entries, employees?, branches?)
+ * Returns distinct working days per employee per branch.
+ */
+export function getEmployeeDays(
+  entries:    ScheduleEntry[],
+  employees?: Employee[],
+  branches?:  Branch[],
+): EmployeeDaySummary[] {
+  const profiles = getProfileRegistry(employees)
+  const bMap     = getBranchRegistry(branches)
+  const seen     = new Set<string>()
+  const counts   = new Map<string, number>()
 
   for (const e of entries) {
     const ct = e.cellType ?? 'branch'
     if (ct !== 'branch' && ct !== 'visit') continue
     if (!e.branchId) continue
-    if (!branches.has(e.branchId)) continue  // skip br-09
+    if (!bMap.has(e.branchId)) continue
 
     const key = `${e.employeeId}|${e.branchId}|${e.date}`
     if (seen.has(key)) continue
     seen.add(key)
-
-    const groupKey = `${e.employeeId}|${e.branchId}`
-    counts.set(groupKey, (counts.get(groupKey) ?? 0) + 1)
+    const gk = `${e.employeeId}|${e.branchId}`
+    counts.set(gk, (counts.get(gk) ?? 0) + 1)
   }
 
   const result: EmployeeDaySummary[] = []
   for (const [key, days] of counts) {
     const [employeeId, branchId] = key.split('|')
     const prof   = profiles.get(employeeId)
-    const branch = branches.get(branchId)
+    const branch = bMap.get(branchId)
     result.push({
       employeeId,
-      employeeName: prof?.name || prof?.nameEn || employeeId,
+      employeeName: prof ? getEmpName(prof) : employeeId,
       branchId,
-      branchName:   branch?.storeNameAr || branch?.storeName || branchId,
+      branchName: branch?.storeNameAr || branch?.storeName || branchId,
       days,
     })
   }
-
-  // Sort by employee name then branch
   return result.sort((a, b) =>
-    a.employeeName.localeCompare(b.employeeName, 'ar') || a.branchName.localeCompare(b.branchName, 'ar'),
+    a.employeeName.localeCompare(b.employeeName, 'ar') ||
+    a.branchName.localeCompare(b.branchName, 'ar'),
   )
 }

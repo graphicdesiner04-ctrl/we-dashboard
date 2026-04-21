@@ -44,8 +44,11 @@ export function usePermissions() {
     [allBranches, region],
   )
 
-  // Merge strategy: keep existing user records + inject any missing seeds by ID
-  const [records, setRecords] = useState<PermissionRecord[]>(() => {
+  // empIds for region isolation — used to filter exposed records
+  const empIds = useMemo(() => new Set(employees.map(e => e.id)), [employees])
+
+  // Internal state — holds ALL records from storage (both regions)
+  const [_allRecords, _setAllRecords] = useState<PermissionRecord[]>(() => {
     const raw = storage.get<PermissionRecord[] | null>('records', null)
     if (raw !== null && Array.isArray(raw)) {
       const existingIds = new Set(raw.map(r => r.id))
@@ -55,23 +58,32 @@ export function usePermissions() {
     return [...PERMISSION_INITIAL]
   })
 
-  useEffect(() => { storage.set('records', records) }, [records])
+  useEffect(() => { storage.set('records', _allRecords) }, [_allRecords])
+
+  // Region-isolated records — only current region's employees
+  const records = useMemo(
+    () => _allRecords.filter(r => empIds.has(r.employeeId)),
+    [_allRecords, empIds],
+  )
 
   const addRecord = useCallback((input: PermissionInput) => {
     const decimalHours = r2(input.hours + input.minutes / 60)
-    setRecords(prev => [{ id: uid(), ...input, decimalHours, createdAt: new Date().toISOString() }, ...prev])
+    _setAllRecords(prev => [{ id: uid(), ...input, decimalHours, createdAt: new Date().toISOString() }, ...prev])
   }, [])
 
   const updateRecord = useCallback((id: string, input: PermissionInput) => {
     const decimalHours = r2(input.hours + input.minutes / 60)
-    setRecords(prev => prev.map(r => r.id === id ? { ...r, ...input, decimalHours } : r))
+    _setAllRecords(prev => prev.map(r => r.id === id ? { ...r, ...input, decimalHours } : r))
   }, [])
 
   const deleteRecord = useCallback((id: string) => {
-    setRecords(prev => prev.filter(r => r.id !== id))
+    _setAllRecords(prev => prev.filter(r => r.id !== id))
   }, [])
 
-  const resetRecords = useCallback(() => setRecords([]), [])
+  const resetRecords = useCallback(() => {
+    // Only reset current region's records
+    _setAllRecords(prev => prev.filter(r => !empIds.has(r.employeeId)))
+  }, [empIds])
 
   const monthPrefix = currentMonthPrefix()
   const currentMonthRecords = useMemo(
@@ -96,7 +108,6 @@ export function usePermissions() {
   )
 
   const kpi = useMemo((): PermissionsKPI => {
-    // Derive from summaries so it's automatically scoped to the current region
     const totalUsed = r2(summaries.reduce((s, e) => s + e.totalDecimalHours, 0))
     return {
       totalEmployees: employees.length,
