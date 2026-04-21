@@ -95,4 +95,11 @@ export const AUTH_ACCOUNTS: UserAccount[] = [
     password: 'WeData2060',
     employeeId: 'emp-n25',
   },
+  {
+    id: 'usr-n06',
+    name: 'Ahmed Bahaa Elshafaay',
+    role: 'Super',
+    username: 'Ahmed.Bahaa',
+    password: 'WeData2060',
+  },
 ]
