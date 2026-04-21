@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   Server, Wifi, Printer, Monitor, Cpu, ChevronDown, Info, Package,
   Plus, Pencil, Trash2, X, Save, AlertTriangle,
 } from 'lucide-react'
-import { BRANCHES } from '@/data/mockData'
+import { useRegion }   from '@/context/RegionContext'
+import { useBranches } from '@/hooks/useBranches'
 import { useBranchTechnical } from '@/hooks/useBranchTechnical'
 import type { Branch, BranchTechnicalProfile, BranchAsset } from '@/types/hr'
 import type { ProfileInput, AssetInput } from '@/hooks/useBranchTechnical'
@@ -382,10 +383,19 @@ function BranchInfoCard({ branch }: { branch: Branch }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────
 export default function BranchTechnicalPage() {
+  const { region } = useRegion()
+  const { branches: allBranches } = useBranches()
   const { profiles, assets, addProfile, updateProfile, deleteProfile, addAsset, updateAsset, deleteAsset } = useBranchTechnical()
-  const branches = BRANCHES
+
+  const branches = useMemo(
+    () => allBranches.filter(b => (b.region ?? 'south') === region),
+    [allBranches, region],
+  )
 
   const [selectedId, setSelectedId] = useState<string>('')
+
+  // Reset selection when region changes
+  useEffect(() => { setSelectedId('') }, [region])
 
   // Modals
   const [profileModal, setProfileModal] = useState(false)
