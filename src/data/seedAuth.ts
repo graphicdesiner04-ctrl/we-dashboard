@@ -53,4 +53,46 @@ export const AUTH_ACCOUNTS: UserAccount[] = [
     password: 'WeData2060',
     employeeId: 'emp-42',
   },
+
+  // ── North Seniors ─────────────────────────────────────────────────────────
+  {
+    id: 'usr-n01',
+    name: 'Anas Wael',
+    role: 'Senior',
+    username: 'Anas.Wael',
+    password: 'WeData2060',
+    employeeId: 'emp-n21',
+  },
+  {
+    id: 'usr-n02',
+    name: 'Mahmoud Nour-Eldeen',
+    role: 'Senior',
+    username: 'Mahmoud.NourEldeen',
+    password: 'WeData2060',
+    employeeId: 'emp-n22',
+  },
+  {
+    id: 'usr-n03',
+    name: 'Amr Salah',
+    role: 'Senior',
+    username: 'Amr.Salah',
+    password: 'WeData2060',
+    employeeId: 'emp-n23',
+  },
+  {
+    id: 'usr-n04',
+    name: 'Mohamed Shalkamy',
+    role: 'Senior',
+    username: 'Mohamed.Shalkamy',
+    password: 'WeData2060',
+    employeeId: 'emp-n24',
+  },
+  {
+    id: 'usr-n05',
+    name: 'Bishoy Megeed',
+    role: 'Senior',
+    username: 'Bishoy.Megeed',
+    password: 'WeData2060',
+    employeeId: 'emp-n25',
+  },
 ]
