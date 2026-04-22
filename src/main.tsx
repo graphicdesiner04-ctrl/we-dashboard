@@ -5,8 +5,13 @@ import { ThemeProvider }    from '@/context/ThemeContext'
 import { AuthProvider }     from '@/context/AuthContext'
 import { LanguageProvider } from '@/context/LanguageContext'
 import { RegionProvider }   from '@/context/RegionContext'
-import { EMPLOYEES, NORTH_EMPLOYEES, BRANCHES, NORTH_BRANCHES } from '@/data/seedData'
+import {
+  EMPLOYEES, NORTH_EMPLOYEES, BRANCHES, NORTH_BRANCHES,
+  SICK_LEAVE_INITIAL, WORKING_DAY_OFF_INITIAL, ANNUAL_LEAVE_INITIAL, INSTEAD_OF_INITIAL,
+} from '@/data/seedData'
+import type { SickLeaveRecord, WorkingDayOffRecord, AnnualLeaveRecord, InsteadOfRecord } from '@/types/hr'
 import { storage } from '@/lib/storage'
+import { syncBackfillAll } from '@/lib/scheduleSync'
 import App from './App'
 import './index.css'
 
@@ -82,6 +87,20 @@ import './index.css'
   // 'records','al-records','sl-records','io-records','wdo-records','eval-records'
   // are SHARED storage keys. The hooks filter them in-memory by empIds, so
   // no cross-region records are ever visible in the UI. No storage cleanup needed.
+
+  // ── Schedule sync backfill ────────────────────────────────────────────────
+  // Rebuilds ALL sync entries in schedule-entries / north-schedule-entries
+  // from every record currently in storage.  Runs every startup — idempotent.
+  // This ensures records created before the sync feature are also visible in
+  // the schedule grid (including edits made before the feature was deployed).
+  const isNorth = (empId: string) => northEmpIds.has(empId)
+
+  const slRecords  = storage.get<SickLeaveRecord[]>  ('sl-records',  SICK_LEAVE_INITIAL)
+  const wdoRecords = storage.get<WorkingDayOffRecord[]>('wdo-records', WORKING_DAY_OFF_INITIAL)
+  const alRecords  = storage.get<AnnualLeaveRecord[]> ('al-records',  ANNUAL_LEAVE_INITIAL)
+  const ioRecords  = storage.get<InsteadOfRecord[]>   ('io-records',  INSTEAD_OF_INITIAL)
+
+  syncBackfillAll(slRecords, wdoRecords, alRecords, ioRecords, isNorth)
 })()
 
 createRoot(document.getElementById('root')!).render(

@@ -239,3 +239,74 @@ export function syncIoUpdate(
 export function syncIoRemove(region: Region, recordId: string) {
   removeAndNotify(region, `sync-io-${recordId}`)
 }
+
+// ── Startup backfill ──────────────────────────────────────────────────────
+// Called once from initializeStorage() in main.tsx.
+// Rebuilds ALL sync entries from every record in storage so that records
+// created before the sync feature was introduced appear in the schedule.
+// Runs on every page load — idempotent and fast (2 localStorage writes total).
+
+type SlRec  = { id: string; employeeId: string; fromDate: string; toDate: string;  branchId?: string; note?: string }
+type WdoRec = { id: string; employeeId: string; branchId: string; date: string;    note?: string }
+type AlRec  = { id: string; employeeId: string; branchId?: string; date: string;   days: number; note?: string }
+type IoRec  = { id: string; employeeId: string; branchId?: string; date: string;   replacementDate?: string; note?: string }
+
+export function syncBackfillAll(
+  slRecords:  SlRec[],
+  wdoRecords: WdoRec[],
+  alRecords:  AlRec[],
+  ioRecords:  IoRec[],
+  isNorth:    (empId: string) => boolean,
+) {
+  const south: ScheduleEntry[] = []
+  const north: ScheduleEntry[] = []
+  const push = (empId: string, e: ScheduleEntry) =>
+    (isNorth(empId) ? north : south).push(e)
+
+  // Sick leave — one 'sick' cell per day
+  slRecords.forEach(r => {
+    dateRangeFromTo(r.fromDate, r.toDate).forEach((date, i) =>
+      push(r.employeeId, makeEntry(`sync-sl-${r.id}-${i}`, r.employeeId, date, 'sick', r.branchId, r.note)),
+    )
+  })
+
+  // Working day off — one 'branch' cell
+  wdoRecords.forEach(r => {
+    push(r.employeeId, makeEntry(
+      `sync-wdo-${r.id}`, r.employeeId, r.date, 'branch', r.branchId,
+      r.note ? `تغطية — ${r.note}` : 'تغطية يوم إجازة',
+    ))
+  })
+
+  // Annual leave — one 'annual' cell per day
+  alRecords.forEach(r => {
+    dateRange(r.date, r.days).forEach((date, i) =>
+      push(r.employeeId, makeEntry(`sync-al-${r.id}-${i}`, r.employeeId, date, 'annual', r.branchId, r.note)),
+    )
+  })
+
+  // Instead of — 'branch' on worked day + 'off' on compensatory day
+  ioRecords.forEach(r => {
+    push(r.employeeId, makeEntry(
+      `sync-io-${r.id}-work`, r.employeeId, r.date, 'branch', r.branchId,
+      r.note ? `بدلاً من — ${r.note}` : 'بدلاً من',
+    ))
+    if (r.replacementDate) {
+      push(r.employeeId, makeEntry(
+        `sync-io-${r.id}-comp`, r.employeeId, r.replacementDate, 'off',
+        undefined, 'يوم تعويضي',
+      ))
+    }
+  })
+
+  // One write per region: replace ALL old sync entries with fresh ones
+  ;(['south', 'north'] as Region[]).forEach(region => {
+    const fresh   = region === 'north' ? north : south
+    const freshIds = new Set(fresh.map(e => e.id))
+    const existing = getEntries(region)
+    // Keep non-sync entries; replace sync entries entirely
+    const kept = existing.filter(e => !e.id.startsWith('sync-') || freshIds.has(e.id))
+    const withoutStale = kept.filter(e => !e.id.startsWith('sync-'))
+    setEntries(region, [...withoutStale, ...fresh])
+  })
+}
