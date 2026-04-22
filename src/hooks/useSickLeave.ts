@@ -5,6 +5,7 @@ import { getCurrentBranchId } from '@/hooks/useAssignments'
 import { storage } from '@/lib/storage'
 import { useRegion } from '@/context/RegionContext'
 import { loadAllEmployees, loadAllBranches } from '@/lib/regionHelpers'
+import { syncSlAdd, syncSlUpdate, syncSlRemove } from '@/lib/scheduleSync'
 
 function r2(n: number) { return Math.round(n * 100) / 100 }
 
@@ -78,18 +79,22 @@ export function useSickLeave() {
   )
 
   const addRecord = useCallback((input: SickLeaveInput) => {
+    const id   = uid()
     const days = input.days > 0 ? input.days : daysBetween(input.fromDate, input.toDate)
-    _setAllRecords(prev => [{ id: uid(), ...input, days, createdAt: new Date().toISOString() }, ...prev])
-  }, [])
+    _setAllRecords(prev => [{ id, ...input, days, createdAt: new Date().toISOString() }, ...prev])
+    syncSlAdd(region, id, input.employeeId, input.fromDate, input.toDate, input.branchId, input.note)
+  }, [region])
 
   const updateRecord = useCallback((id: string, input: SickLeaveInput) => {
     const days = input.days > 0 ? input.days : daysBetween(input.fromDate, input.toDate)
     _setAllRecords(prev => prev.map(r => r.id === id ? { ...r, ...input, days } : r))
-  }, [])
+    syncSlUpdate(region, id, input.employeeId, input.fromDate, input.toDate, input.branchId, input.note)
+  }, [region])
 
   const deleteRecord = useCallback((id: string) => {
     _setAllRecords(prev => prev.filter(r => r.id !== id))
-  }, [])
+    syncSlRemove(region, id)
+  }, [region])
 
   const resetRecords = useCallback(() => {
     // Only reset current region's records

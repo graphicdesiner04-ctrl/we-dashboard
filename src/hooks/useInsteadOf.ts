@@ -5,6 +5,7 @@ import { getCurrentBranchId } from '@/hooks/useAssignments'
 import { storage } from '@/lib/storage'
 import { useRegion } from '@/context/RegionContext'
 import { loadAllEmployees, loadAllBranches } from '@/lib/regionHelpers'
+import { syncIoAdd, syncIoUpdate, syncIoRemove } from '@/lib/scheduleSync'
 
 function uid() {
   return `io-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
@@ -71,16 +72,20 @@ export function useInsteadOf() {
   )
 
   const addRecord = useCallback((input: InsteadOfInput) => {
-    _setAllRecords(prev => [{ id: uid(), ...input, createdAt: new Date().toISOString() }, ...prev])
-  }, [])
+    const id = uid()
+    _setAllRecords(prev => [{ id, ...input, createdAt: new Date().toISOString() }, ...prev])
+    syncIoAdd(region, id, input.employeeId, input.date, input.branchId, input.replacementDate, input.note)
+  }, [region])
 
   const updateRecord = useCallback((id: string, input: InsteadOfInput) => {
     _setAllRecords(prev => prev.map(r => r.id === id ? { ...r, ...input } : r))
-  }, [])
+    syncIoUpdate(region, id, input.employeeId, input.date, input.branchId, input.replacementDate, input.note)
+  }, [region])
 
   const deleteRecord = useCallback((id: string) => {
     _setAllRecords(prev => prev.filter(r => r.id !== id))
-  }, [])
+    syncIoRemove(region, id)
+  }, [region])
 
   const resetRecords = useCallback(() => {
     // Only reset current region's records

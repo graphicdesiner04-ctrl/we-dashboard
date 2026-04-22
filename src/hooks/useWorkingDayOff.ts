@@ -4,6 +4,7 @@ import { WORKING_DAY_OFF_INITIAL } from '@/data/seedData'
 import { storage } from '@/lib/storage'
 import { useRegion } from '@/context/RegionContext'
 import { loadAllEmployees, loadAllBranches } from '@/lib/regionHelpers'
+import { syncWdoAdd, syncWdoUpdate, syncWdoRemove } from '@/lib/scheduleSync'
 
 function uid() {
   return `wdo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
@@ -60,8 +61,10 @@ export function useWorkingDayOff() {
   )
 
   const addRecord = useCallback((input: WorkingDayOffInput) => {
-    _setAllRecords(prev => [{ id: uid(), ...input, createdAt: new Date().toISOString() }, ...prev])
-  }, [])
+    const id = uid()
+    _setAllRecords(prev => [{ id, ...input, createdAt: new Date().toISOString() }, ...prev])
+    syncWdoAdd(region, id, input.employeeId, input.branchId, input.date, input.note)
+  }, [region])
 
   const addBulkRecords = useCallback((inputs: WorkingDayOffInput[]) => {
     if (inputs.length === 0) return
@@ -71,17 +74,20 @@ export function useWorkingDayOff() {
       const toAdd = inputs
         .filter(inp => !existing.has(`${inp.employeeId}|${inp.date}`))
         .map(inp => ({ id: uid(), ...inp, createdAt: now }))
+      toAdd.forEach(r => syncWdoAdd(region, r.id, r.employeeId, r.branchId, r.date, r.note))
       return toAdd.length === 0 ? prev : [...toAdd, ...prev]
     })
-  }, [])
+  }, [region])
 
   const updateRecord = useCallback((id: string, input: WorkingDayOffInput) => {
     _setAllRecords(prev => prev.map(r => r.id === id ? { ...r, ...input } : r))
-  }, [])
+    syncWdoUpdate(region, id, input.employeeId, input.branchId, input.date, input.note)
+  }, [region])
 
   const deleteRecord = useCallback((id: string) => {
     _setAllRecords(prev => prev.filter(r => r.id !== id))
-  }, [])
+    syncWdoRemove(region, id)
+  }, [region])
 
   const year  = new Date().getFullYear().toString()
   const month = String(new Date().getMonth() + 1).padStart(2, '0')

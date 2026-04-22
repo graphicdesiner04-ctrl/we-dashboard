@@ -6,6 +6,7 @@ import { getCurrentBranchId } from '@/hooks/useAssignments'
 import { storage } from '@/lib/storage'
 import { useRegion } from '@/context/RegionContext'
 import { loadAllEmployees, loadAllBranches } from '@/lib/regionHelpers'
+import { syncAlAdd, syncAlUpdate, syncAlRemove } from '@/lib/scheduleSync'
 
 function r2(n: number) { return Math.round(n * 100) / 100 }
 
@@ -59,16 +60,20 @@ export function useAnnualLeave() {
   )
 
   const addRecord = useCallback((input: AnnualLeaveInput) => {
-    _setAllRecords(prev => [{ id: uid(), ...input, createdAt: new Date().toISOString() }, ...prev])
-  }, [])
+    const id = uid()
+    _setAllRecords(prev => [{ id, ...input, createdAt: new Date().toISOString() }, ...prev])
+    syncAlAdd(region, id, input.employeeId, input.date, input.days, input.branchId, input.note)
+  }, [region])
 
   const updateRecord = useCallback((id: string, input: AnnualLeaveInput) => {
     _setAllRecords(prev => prev.map(r => r.id === id ? { ...r, ...input } : r))
-  }, [])
+    syncAlUpdate(region, id, input.employeeId, input.date, input.days, input.branchId, input.note)
+  }, [region])
 
   const deleteRecord = useCallback((id: string) => {
     _setAllRecords(prev => prev.filter(r => r.id !== id))
-  }, [])
+    syncAlRemove(region, id)
+  }, [region])
 
   const resetRecords = useCallback(() => {
     // Only reset current region's records
