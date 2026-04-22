@@ -5,10 +5,7 @@ import { ThemeProvider }    from '@/context/ThemeContext'
 import { AuthProvider }     from '@/context/AuthContext'
 import { LanguageProvider } from '@/context/LanguageContext'
 import { RegionProvider }   from '@/context/RegionContext'
-import {
-  EMPLOYEES, NORTH_EMPLOYEES, BRANCHES, NORTH_BRANCHES,
-  SICK_LEAVE_INITIAL, WORKING_DAY_OFF_INITIAL, ANNUAL_LEAVE_INITIAL, INSTEAD_OF_INITIAL,
-} from '@/data/seedData'
+import { EMPLOYEES, NORTH_EMPLOYEES, BRANCHES, NORTH_BRANCHES } from '@/data/seedData'
 import type { SickLeaveRecord, WorkingDayOffRecord, AnnualLeaveRecord, InsteadOfRecord } from '@/types/hr'
 import { storage } from '@/lib/storage'
 import { syncBackfillAll } from '@/lib/scheduleSync'
@@ -95,10 +92,12 @@ import './index.css'
   // the schedule grid (including edits made before the feature was deployed).
   const isNorth = (empId: string) => northEmpIds.has(empId)
 
-  const slRecords  = storage.get<SickLeaveRecord[]>  ('sl-records',  SICK_LEAVE_INITIAL)
-  const wdoRecords = storage.get<WorkingDayOffRecord[]>('wdo-records', WORKING_DAY_OFF_INITIAL)
-  const alRecords  = storage.get<AnnualLeaveRecord[]> ('al-records',  ANNUAL_LEAVE_INITIAL)
-  const ioRecords  = storage.get<InsteadOfRecord[]>   ('io-records',  INSTEAD_OF_INITIAL)
+  // Read ONLY what's actually saved — no seed fallback.
+  // Falling back to seeds would restore deleted records on every startup.
+  const slRecords  = storage.get<SickLeaveRecord[]   | null>('sl-records',  null) ?? []
+  const wdoRecords = storage.get<WorkingDayOffRecord[] | null>('wdo-records', null) ?? []
+  const alRecords  = storage.get<AnnualLeaveRecord[]  | null>('al-records',  null) ?? []
+  const ioRecords  = storage.get<InsteadOfRecord[]    | null>('io-records',  null) ?? []
 
   syncBackfillAll(slRecords, wdoRecords, alRecords, ioRecords, isNorth)
 })()

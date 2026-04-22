@@ -299,14 +299,13 @@ export function syncBackfillAll(
     }
   })
 
-  // One write per region: replace ALL old sync entries with fresh ones
+  // One write per region: keep ALL non-sync entries untouched,
+  // replace only sync-* entries with the freshly computed set.
   ;(['south', 'north'] as Region[]).forEach(region => {
-    const fresh   = region === 'north' ? north : south
-    const freshIds = new Set(fresh.map(e => e.id))
+    const fresh    = region === 'north' ? north : south
     const existing = getEntries(region)
-    // Keep non-sync entries; replace sync entries entirely
-    const kept = existing.filter(e => !e.id.startsWith('sync-') || freshIds.has(e.id))
-    const withoutStale = kept.filter(e => !e.id.startsWith('sync-'))
-    setEntries(region, [...withoutStale, ...fresh])
+    // Never touch entries the user entered manually (non-sync IDs)
+    const manual   = existing.filter(e => !e.id.startsWith('sync-'))
+    setEntries(region, [...manual, ...fresh])
   })
 }
