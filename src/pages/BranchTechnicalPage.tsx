@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect } from 'react'
 import {
   Server, Wifi, Printer, Monitor, Cpu, ChevronDown, Info, Package,
-  Plus, Pencil, Trash2, X, Save, AlertTriangle,
+  Plus, Pencil, Trash2, X, Save, AlertTriangle, Building2,
 } from 'lucide-react'
 import { useRegion }   from '@/context/RegionContext'
 import { useBranches } from '@/hooks/useBranches'
+import type { BranchInput } from '@/hooks/useBranches'
 import { useBranchTechnical } from '@/hooks/useBranchTechnical'
 import type { Branch, BranchTechnicalProfile, BranchAsset } from '@/types/hr'
 import type { ProfileInput, AssetInput } from '@/hooks/useBranchTechnical'
@@ -364,8 +365,106 @@ function AssetsSection({ branchId, assets, onAdd, onEdit, onDelete }: {
   )
 }
 
+// ── Branch info / EXT modal ───────────────────────────────────────────────
+function BranchInfoModal({ editing, region, onClose, onSave, onDelete }: {
+  editing:   Branch | null   // null = add new
+  region:    'south' | 'north'
+  onClose:   () => void
+  onSave:    (input: BranchInput & { region?: 'south' | 'north' }) => void
+  onDelete?: () => void
+}) {
+  const empty: BranchInput & { region?: 'south' | 'north' } = {
+    storeName: '', storeNameAr: '', ou: '',
+    ext1: '', ext2: '', ext3: '', extSenior: '', test1: '', test2: '',
+    region,
+  }
+  const [form, setForm] = useState<BranchInput & { region?: 'south' | 'north' }>(
+    editing
+      ? {
+          storeName: editing.storeName, storeNameAr: editing.storeNameAr ?? '',
+          ou: editing.ou, ext1: editing.ext1, ext2: editing.ext2,
+          ext3: editing.ext3, extSenior: editing.extSenior,
+          test1: editing.test1, test2: editing.test2, region: editing.region ?? 'south',
+        }
+      : empty
+  )
+  const f = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }))
+  const L = ({ children }: { children: React.ReactNode }) => (
+    <label className="block text-xs font-bold text-secondary mb-1">{children}</label>
+  )
+  const Inp = ({ k, placeholder }: { k: keyof typeof form; placeholder?: string }) => (
+    <input value={String(form[k] ?? '')} onChange={e => f(k, e.target.value)}
+      placeholder={placeholder} className="we-input text-xs w-full font-mono" />
+  )
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.65)' }}>
+      <div className="w-full max-w-lg rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', maxHeight: '92vh' }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: `${WE}16` }}>
+              <Building2 size={14} style={{ color: WE }} />
+            </div>
+            <div>
+              <h2 className="text-sm font-black text-primary">{editing ? 'تعديل بيانات الفرع' : 'إضافة فرع جديد'}</h2>
+              <p className="text-xs text-secondary">بيانات CSO والامتدادات</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            {onDelete && (
+              <button onClick={onDelete} className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                <Trash2 size={14} />
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded-lg text-tertiary hover:text-primary hover:bg-elevated transition-colors">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+        {/* Form */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4" style={{ direction: 'rtl' }}>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2"><L>اسم الفرع (إنجليزي) *</L><Inp k="storeName" placeholder="Mallawy" /></div>
+            <div className="col-span-2"><L>اسم الفرع (عربي)</L>
+              <input value={form.storeNameAr ?? ''} onChange={e => f('storeNameAr', e.target.value)}
+                placeholder="الملوي" className="we-input text-xs w-full" style={{ direction: 'rtl' }} />
+            </div>
+          </div>
+          <div className="border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+            <p className="text-[10px] font-black uppercase tracking-widest text-tertiary mb-3">بيانات CSO</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2"><L>OU</L><Inp k="ou" placeholder="wS09Bi010921" /></div>
+              <div><L>EXT 1</L><Inp k="ext1" placeholder="9070" /></div>
+              <div><L>EXT 2</L><Inp k="ext2" placeholder="9071" /></div>
+              <div><L>EXT 3</L><Inp k="ext3" placeholder="9072" /></div>
+              <div><L>EXT Senior</L><Inp k="extSenior" placeholder="9073" /></div>
+              <div><L>Test 1</L><Inp k="test1" placeholder="9920" /></div>
+              <div><L>Test 2</L><Inp k="test2" placeholder="9921" /></div>
+            </div>
+          </div>
+        </div>
+        {/* Footer */}
+        <div className="px-5 pb-5 flex gap-3 flex-shrink-0 border-t pt-4" style={{ borderColor: 'var(--border)', direction: 'rtl' }}>
+          <button
+            onClick={() => {
+              if (!form.storeName.trim()) { alert('يرجى إدخال اسم الفرع'); return }
+              onSave(form)
+            }}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90"
+            style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
+            {editing ? <><Save size={14} /> حفظ التغييرات</> : <><Plus size={14} /> إضافة فرع</>}
+          </button>
+          <button onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-elevated transition-colors" style={{ color: 'var(--text-secondary)' }}>إلغاء</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── CSO / Branch info card ────────────────────────────────────────────────
-function BranchInfoCard({ branch }: { branch: Branch }) {
+function BranchInfoCard({ branch, onEdit }: { branch: Branch; onEdit: () => void }) {
   return (
     <SectionCard icon={Info} title="معلومات الفرع (CSO)">
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4">
@@ -377,6 +476,13 @@ function BranchInfoCard({ branch }: { branch: Branch }) {
         <Row label="Test 1"     value={branch.test1}     />
         <Row label="Test 2"     value={branch.test2}     />
       </div>
+      <div className="flex justify-end mt-3">
+        <button onClick={onEdit}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-80"
+          style={{ background: `${WE}14`, color: WE }}>
+          <Pencil size={12} /> تعديل بيانات الفرع
+        </button>
+      </div>
     </SectionCard>
   )
 }
@@ -384,7 +490,7 @@ function BranchInfoCard({ branch }: { branch: Branch }) {
 // ── Main page ─────────────────────────────────────────────────────────────
 export default function BranchTechnicalPage() {
   const { region } = useRegion()
-  const { branches: allBranches } = useBranches()
+  const { branches: allBranches, addBranch, updateBranch, deleteBranch } = useBranches()
   const { profiles, assets, addProfile, updateProfile, deleteProfile, addAsset, updateAsset, deleteAsset } = useBranchTechnical()
 
   const branches = useMemo(
@@ -398,10 +504,12 @@ export default function BranchTechnicalPage() {
   useEffect(() => { setSelectedId('') }, [region])
 
   // Modals
-  const [profileModal, setProfileModal] = useState(false)
+  const [profileModal, setProfileModal]     = useState(false)
   const [editingProfile, setEditingProfile] = useState<BranchTechnicalProfile | null>(null)
-  const [assetModal, setAssetModal] = useState(false)
-  const [editingAsset, setEditingAsset] = useState<BranchAsset | null>(null)
+  const [assetModal, setAssetModal]         = useState(false)
+  const [editingAsset, setEditingAsset]     = useState<BranchAsset | null>(null)
+  const [branchModal, setBranchModal]       = useState(false)
+  const [editingBranch, setEditingBranch]   = useState<Branch | null>(null)   // null = add new
 
   const branch  = useMemo(() => branches.find(b => b.id === selectedId), [branches, selectedId])
   const profile = useMemo(() => profiles.find(p => p.branchId === selectedId), [profiles, selectedId])
@@ -432,6 +540,23 @@ export default function BranchTechnicalPage() {
     }
   }
 
+  function handleBranchSave(input: BranchInput & { region?: 'south' | 'north' }) {
+    if (editingBranch) {
+      updateBranch(editingBranch.id, input)
+    } else {
+      addBranch({ ...input, region: region as 'south' | 'north' })
+    }
+    setBranchModal(false); setEditingBranch(null)
+  }
+  function handleBranchDelete() {
+    if (!editingBranch) return
+    if (window.confirm(`حذف فرع "${editingBranch.storeName}" نهائياً؟ لا يمكن التراجع.`)) {
+      deleteBranch(editingBranch.id)
+      setSelectedId('')
+      setBranchModal(false); setEditingBranch(null)
+    }
+  }
+
   return (
     <div style={{ direction: 'rtl' }}>
       {/* Header */}
@@ -443,8 +568,14 @@ export default function BranchTechnicalPage() {
             </div>
             <h1 className="text-xl font-black text-primary">البنية التقنية للفروع</h1>
           </div>
-          <p className="text-sm text-secondary">بيانات البنية التحتية التقنية لكل فرع — قابلة للتعديل والإضافة</p>
+          <p className="text-sm text-secondary">بيانات البنية التحتية التقنية لكل فرع — قابلة للتعديل والإضافة والحذف</p>
         </div>
+        <button
+          onClick={() => { setEditingBranch(null); setBranchModal(true) }}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 flex-shrink-0"
+          style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
+          <Plus size={14} /> إضافة فرع
+        </button>
       </div>
 
       {/* Branch selector */}
@@ -489,14 +620,22 @@ export default function BranchTechnicalPage() {
               <p className="font-bold text-primary">{branch.storeName}</p>
               <p className="text-xs text-tertiary">{branch.ou}{profile ? ` · Code: ${profile.code}` : ''}</p>
             </div>
-            {!profile && (
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {!profile && (
+                <button
+                  onClick={() => { setEditingProfile(null); setProfileModal(true) }}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
+                  style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
+                  <Plus size={12} /> إضافة بيانات تقنية
+                </button>
+              )}
               <button
-                onClick={() => { setEditingProfile(null); setProfileModal(true) }}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
-                style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
-                <Plus size={12} /> إضافة بيانات تقنية
+                onClick={() => { setEditingBranch(branch); setBranchModal(true) }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-80"
+                style={{ background: `${WE}14`, color: WE }}>
+                <Pencil size={12} /> تعديل الفرع
               </button>
-            )}
+            </div>
           </div>
 
           {/* No profile warning */}
@@ -524,7 +663,7 @@ export default function BranchTechnicalPage() {
           />
 
           {/* CSO info */}
-          <BranchInfoCard branch={branch} />
+          <BranchInfoCard branch={branch} onEdit={() => { setEditingBranch(branch); setBranchModal(true) }} />
         </div>
       )}
 
@@ -548,6 +687,17 @@ export default function BranchTechnicalPage() {
           onClose={() => { setAssetModal(false); setEditingAsset(null) }}
           onSave={handleAssetSave}
           onDelete={editingAsset ? handleAssetDelete : undefined}
+        />
+      )}
+
+      {/* Branch info / EXT modal */}
+      {branchModal && (
+        <BranchInfoModal
+          editing={editingBranch}
+          region={region as 'south' | 'north'}
+          onClose={() => { setBranchModal(false); setEditingBranch(null) }}
+          onSave={handleBranchSave}
+          onDelete={editingBranch ? handleBranchDelete : undefined}
         />
       )}
     </div>

@@ -15,6 +15,7 @@ export type BranchInput = {
   extSenior: string
   test1: string
   test2: string
+  region?: 'south' | 'north'
 }
 
 function uid() {
