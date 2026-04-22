@@ -746,6 +746,16 @@ export const SICK_LEAVE_INITIAL: SickLeaveRecord[] = [
     note:       'sick',
     createdAt:  '2026-04-07T00:00:00.000Z',
   },
+  {
+    id: 'sl-seed-002',
+    employeeId: 'emp-30',   // Ahmed.Zaref (9070)
+    branchId:   'br-01',   // Mallawy
+    fromDate:   '2026-04-21',
+    toDate:     '2026-04-22',
+    days:       2,
+    note:       'إجازة مرضية',
+    createdAt:  '2026-04-21T00:00:00.000Z',
+  },
 ]
 
 // ── Instead Of Initial Records ────────────────────────────────────────────
@@ -789,6 +799,9 @@ export const WORKING_DAY_OFF_INITIAL: WorkingDayOffRecord[] = [
   // ── From Evaluation_Full.xlsx (Working in day off rows) ───────────────────
   { id: 'wd-seed-002', employeeId: 'emp-33', branchId: 'br-05', date: '2026-03-04', note: 'Mahmoud Esmail ID 239015 working in his day off at 4-3-2026 at Menia exchange', createdAt: '2026-04-19T12:00:00.000Z' },
   { id: 'wd-seed-003', employeeId: 'emp-40', branchId: 'br-01', date: '2026-04-05', note: 'Mohamed Abdelmohsen  163825 Worked in his day off cover fady vacation at mallawy 05/04/2026', createdAt: '2026-04-19T12:00:00.000Z' },
+  // ── Fady Atta — cover Ahmed Zarif sickness ────────────────────────────────
+  { id: 'wd-seed-004', employeeId: 'emp-23', branchId: 'br-01', date: '2026-04-21', note: 'Cover Ahmed Zarif Sickness', createdAt: '2026-04-21T00:00:00.000Z' },
+  { id: 'wd-seed-005', employeeId: 'emp-23', branchId: 'br-01', date: '2026-04-22', note: 'Cover Ahmed Zarif Sickness', createdAt: '2026-04-22T00:00:00.000Z' },
 ]
 
 
