@@ -17,6 +17,15 @@
 import { storage } from '@/lib/storage'
 import type { ScheduleEntry, ScheduleCellType, Region } from '@/types/hr'
 
+// ── Custom event — notifies useSchedule to refresh its React state ────────
+export const SCHEDULE_SYNC_EVENT = 'we-schedule-changed'
+
+function notify(region: Region) {
+  window.dispatchEvent(
+    new CustomEvent(SCHEDULE_SYNC_EVENT, { detail: { region } }),
+  )
+}
+
 // ── Internal helpers ──────────────────────────────────────────────────────
 
 function scheduleKey(region: Region) {
@@ -77,6 +86,12 @@ function upsertEntries(region: Region, newEntries: ScheduleEntry[]) {
   const newIds    = new Set(newEntries.map(e => e.id))
   const kept      = existing.filter(e => !newIds.has(e.id))   // replace if same id
   setEntries(region, [...kept, ...newEntries])
+  notify(region)
+}
+
+function removeAndNotify(region: Region, prefix: string) {
+  removeBySyncPrefix(region, prefix)
+  notify(region)
 }
 
 // ── Public API ────────────────────────────────────────────────────────────
@@ -111,7 +126,7 @@ export function syncWdoUpdate(
 }
 
 export function syncWdoRemove(region: Region, recordId: string) {
-  removeBySyncPrefix(region, `sync-wdo-${recordId}`)
+  removeAndNotify(region, `sync-wdo-${recordId}`)
 }
 
 // ── Annual Leave (إجازة سنوية) ─────────────────────────────────────────────
@@ -141,12 +156,12 @@ export function syncAlUpdate(
   branchId?:  string,
   note?:      string,
 ) {
-  removeBySyncPrefix(region, `sync-al-${recordId}`)
-  syncAlAdd(region, recordId, employeeId, startDate, days, branchId, note)
+  removeBySyncPrefix(region, `sync-al-${recordId}`)   // silent remove first
+  syncAlAdd(region, recordId, employeeId, startDate, days, branchId, note)  // notifies
 }
 
 export function syncAlRemove(region: Region, recordId: string) {
-  removeBySyncPrefix(region, `sync-al-${recordId}`)
+  removeAndNotify(region, `sync-al-${recordId}`)
 }
 
 // ── Sick Leave (إجازة مرضية) ──────────────────────────────────────────────
@@ -176,12 +191,12 @@ export function syncSlUpdate(
   branchId?:  string,
   note?:      string,
 ) {
-  removeBySyncPrefix(region, `sync-sl-${recordId}`)
-  syncSlAdd(region, recordId, employeeId, fromDate, toDate, branchId, note)
+  removeBySyncPrefix(region, `sync-sl-${recordId}`)   // silent remove first
+  syncSlAdd(region, recordId, employeeId, fromDate, toDate, branchId, note)  // notifies
 }
 
 export function syncSlRemove(region: Region, recordId: string) {
-  removeBySyncPrefix(region, `sync-sl-${recordId}`)
+  removeAndNotify(region, `sync-sl-${recordId}`)
 }
 
 // ── Instead Of / بدلاً من ─────────────────────────────────────────────────
@@ -217,10 +232,10 @@ export function syncIoUpdate(
   replacementDate?: string,
   note?:            string,
 ) {
-  removeBySyncPrefix(region, `sync-io-${recordId}`)
-  syncIoAdd(region, recordId, employeeId, workedDate, branchId, replacementDate, note)
+  removeBySyncPrefix(region, `sync-io-${recordId}`)   // silent remove first
+  syncIoAdd(region, recordId, employeeId, workedDate, branchId, replacementDate, note)  // notifies
 }
 
 export function syncIoRemove(region: Region, recordId: string) {
-  removeBySyncPrefix(region, `sync-io-${recordId}`)
+  removeAndNotify(region, `sync-io-${recordId}`)
 }

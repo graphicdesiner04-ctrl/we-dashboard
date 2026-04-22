@@ -7,6 +7,7 @@ import {
 import { NORTH_Q1_ENTRIES } from '@/data/northScheduleQ1'
 import { NORTH_Q2_ENTRIES } from '@/data/northScheduleQ2'
 import { storage } from '@/lib/storage'
+import { SCHEDULE_SYNC_EVENT } from '@/lib/scheduleSync'
 
 function uid() {
   return `sch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
@@ -58,6 +59,23 @@ export function useSchedule(region: Region = 'south') {
   })
 
   useEffect(() => { storage.set(storageKey, entries) }, [entries, storageKey])
+
+  // ── Real-time sync listener ──────────────────────────────────────────────
+  // When another module (useWorkingDayOff, useAnnualLeave, etc.) writes a
+  // sync entry to localStorage, it dispatches SCHEDULE_SYNC_EVENT.
+  // We re-read from storage so the schedule grid updates immediately without
+  // requiring the user to navigate away and back.
+  useEffect(() => {
+    function onSync(e: Event) {
+      const { region: r } = (e as CustomEvent<{ region: Region }>).detail
+      if (r !== region) return
+      const raw = storage.get<ScheduleEntry[] | null>(storageKey, null)
+      if (!raw) return
+      setEntries(raw.map(e => ({ ...e, cellType: e.cellType ?? 'branch' })))
+    }
+    window.addEventListener(SCHEDULE_SYNC_EVENT, onSync)
+    return () => window.removeEventListener(SCHEDULE_SYNC_EVENT, onSync)
+  }, [region, storageKey])
 
   const addEntry = useCallback((input: ScheduleInput) => {
     setEntries(prev => [...prev, { id: uid(), ...input, note: input.note ?? '', createdAt: new Date().toISOString() }])
