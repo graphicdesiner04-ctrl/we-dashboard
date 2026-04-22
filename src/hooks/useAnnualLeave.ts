@@ -45,7 +45,8 @@ export function useAnnualLeave() {
     const raw = storage.get<AnnualLeaveRecord[] | null>('al-records', null)
     if (raw !== null && Array.isArray(raw)) {
       const existingIds = new Set(raw.map(r => r.id))
-      const missing = ANNUAL_LEAVE_INITIAL.filter(s => !existingIds.has(s.id))
+      const tombstoned = storage.tombstoneGet('al-records')
+      const missing = ANNUAL_LEAVE_INITIAL.filter(s => !existingIds.has(s.id) && !tombstoned.has(s.id))
       return [...raw, ...missing]
     }
     return [...ANNUAL_LEAVE_INITIAL]
@@ -71,6 +72,7 @@ export function useAnnualLeave() {
   }, [region])
 
   const deleteRecord = useCallback((id: string) => {
+    storage.tombstoneAdd('al-records', id)
     _setAllRecords(prev => prev.filter(r => r.id !== id))
     syncAlRemove(region, id)
   }, [region])

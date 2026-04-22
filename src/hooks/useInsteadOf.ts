@@ -57,7 +57,8 @@ export function useInsteadOf() {
     const raw = storage.get<InsteadOfRecord[] | null>('io-records', null)
     if (raw !== null && Array.isArray(raw)) {
       const existingIds = new Set(raw.map(r => r.id))
-      const missing = INSTEAD_OF_INITIAL.filter(s => !existingIds.has(s.id))
+      const tombstoned = storage.tombstoneGet('io-records')
+      const missing = INSTEAD_OF_INITIAL.filter(s => !existingIds.has(s.id) && !tombstoned.has(s.id))
       return [...raw, ...missing]
     }
     return [...INSTEAD_OF_INITIAL]
@@ -83,6 +84,7 @@ export function useInsteadOf() {
   }, [region])
 
   const deleteRecord = useCallback((id: string) => {
+    storage.tombstoneAdd('io-records', id)
     _setAllRecords(prev => prev.filter(r => r.id !== id))
     syncIoRemove(region, id)
   }, [region])

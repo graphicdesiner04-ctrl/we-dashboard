@@ -47,4 +47,18 @@ export const storage = {
     }
     toRemove.forEach(k => localStorage.removeItem(k))
   },
+
+  // ── Tombstone — tracks IDs the user explicitly deleted ──────────────────
+  // Prevents seed-data merging from restoring records the user removed.
+  // Each namespace (storage key) has its own deleted-IDs list.
+  tombstoneGet(namespace: string): Set<string> {
+    return new Set(this.get<string[]>(`${namespace}:deleted`, []))
+  },
+
+  tombstoneAdd(namespace: string, id: string): void {
+    const current = this.get<string[]>(`${namespace}:deleted`, [])
+    if (!current.includes(id)) {
+      this.set(`${namespace}:deleted`, [...current, id])
+    }
+  },
 }

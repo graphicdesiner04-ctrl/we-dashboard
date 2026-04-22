@@ -52,7 +52,8 @@ export function useEvaluation() {
     const raw = storage.get<EvaluationRecord[] | null>('eval-records', null)
     if (raw !== null && Array.isArray(raw)) {
       const existingIds = new Set(raw.map(r => r.id))
-      const missing = EVAL_SEED_RECORDS.filter(s => !existingIds.has(s.id))
+      const tombstoned = storage.tombstoneGet('eval-records')
+      const missing = EVAL_SEED_RECORDS.filter(s => !existingIds.has(s.id) && !tombstoned.has(s.id))
       return [...raw, ...missing]
     }
     return [...EVAL_SEED_RECORDS]
@@ -75,6 +76,7 @@ export function useEvaluation() {
   }, [])
 
   const deleteRecord = useCallback((id: string) => {
+    storage.tombstoneAdd('eval-records', id)
     _setAllRecords(prev => prev.filter(r => r.id !== id))
   }, [])
 

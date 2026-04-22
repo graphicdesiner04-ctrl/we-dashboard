@@ -64,7 +64,8 @@ export function useSickLeave() {
     const raw = storage.get<SickLeaveRecord[] | null>('sl-records', null)
     if (raw !== null && Array.isArray(raw)) {
       const existingIds = new Set(raw.map(r => r.id))
-      const missing = SICK_LEAVE_INITIAL.filter(s => !existingIds.has(s.id))
+      const tombstoned = storage.tombstoneGet('sl-records')
+      const missing = SICK_LEAVE_INITIAL.filter(s => !existingIds.has(s.id) && !tombstoned.has(s.id))
       return [...raw, ...missing]
     }
     return [...SICK_LEAVE_INITIAL]
@@ -92,6 +93,7 @@ export function useSickLeave() {
   }, [region])
 
   const deleteRecord = useCallback((id: string) => {
+    storage.tombstoneAdd('sl-records', id)
     _setAllRecords(prev => prev.filter(r => r.id !== id))
     syncSlRemove(region, id)
   }, [region])

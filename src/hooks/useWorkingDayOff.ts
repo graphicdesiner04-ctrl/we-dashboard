@@ -46,7 +46,8 @@ export function useWorkingDayOff() {
     const raw = storage.get<WorkingDayOffRecord[] | null>('wdo-records', null)
     if (raw !== null && Array.isArray(raw)) {
       const existingIds = new Set(raw.map(r => r.id))
-      const missing = WORKING_DAY_OFF_INITIAL.filter(s => !existingIds.has(s.id))
+      const tombstoned = storage.tombstoneGet('wdo-records')
+      const missing = WORKING_DAY_OFF_INITIAL.filter(s => !existingIds.has(s.id) && !tombstoned.has(s.id))
       return [...raw, ...missing]
     }
     return [...WORKING_DAY_OFF_INITIAL]
@@ -85,6 +86,7 @@ export function useWorkingDayOff() {
   }, [region])
 
   const deleteRecord = useCallback((id: string) => {
+    storage.tombstoneAdd('wdo-records', id)
     _setAllRecords(prev => prev.filter(r => r.id !== id))
     syncWdoRemove(region, id)
   }, [region])

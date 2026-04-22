@@ -52,7 +52,8 @@ export function useSchedule(region: Region = 'south') {
     const raw = storage.get<ScheduleEntry[] | null>(storageKey, null)
     if (raw !== null && Array.isArray(raw)) {
       const existingIds = new Set(raw.map(e => e.id))
-      const missing = ALL_SEEDS.filter(s => !existingIds.has(s.id))
+      const tombstoned = storage.tombstoneGet(storageKey)
+      const missing = ALL_SEEDS.filter(s => !existingIds.has(s.id) && !tombstoned.has(s.id))
       return [...raw.map(e => ({ ...e, cellType: e.cellType ?? 'branch' })), ...missing]
     }
     return ALL_SEEDS
@@ -105,8 +106,9 @@ export function useSchedule(region: Region = 'south') {
   }, [])
 
   const deleteEntry = useCallback((id: string) => {
+    storage.tombstoneAdd(storageKey, id)
     setEntries(prev => prev.filter(e => e.id !== id))
-  }, [])
+  }, [storageKey])
 
   const resetEntries = useCallback(() => setEntries([]), [])
 

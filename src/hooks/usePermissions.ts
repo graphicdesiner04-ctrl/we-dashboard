@@ -52,7 +52,8 @@ export function usePermissions() {
     const raw = storage.get<PermissionRecord[] | null>('records', null)
     if (raw !== null && Array.isArray(raw)) {
       const existingIds = new Set(raw.map(r => r.id))
-      const missing = PERMISSION_INITIAL.filter(s => !existingIds.has(s.id))
+      const tombstoned = storage.tombstoneGet('records')
+      const missing = PERMISSION_INITIAL.filter(s => !existingIds.has(s.id) && !tombstoned.has(s.id))
       return [...raw, ...missing]
     }
     return [...PERMISSION_INITIAL]
@@ -77,6 +78,7 @@ export function usePermissions() {
   }, [])
 
   const deleteRecord = useCallback((id: string) => {
+    storage.tombstoneAdd('records', id)
     _setAllRecords(prev => prev.filter(r => r.id !== id))
   }, [])
 
