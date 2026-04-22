@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import {
   Server, Wifi, Printer, Monitor, Cpu, ChevronDown, Info, Package,
-  Plus, Pencil, Trash2, X, Save, AlertTriangle, Building2,
+  Plus, Pencil, Trash2, X, Save, AlertTriangle, Building2, Download,
 } from 'lucide-react'
 import { useRegion }   from '@/context/RegionContext'
 import { useBranches } from '@/hooks/useBranches'
@@ -9,6 +9,7 @@ import type { BranchInput } from '@/hooks/useBranches'
 import { useBranchTechnical } from '@/hooks/useBranchTechnical'
 import type { Branch, BranchTechnicalProfile, BranchAsset } from '@/types/hr'
 import type { ProfileInput, AssetInput } from '@/hooks/useBranchTechnical'
+import { exportBranchAssetsXlsx } from '@/lib/exportBranchAssets'
 
 const WE = '#6B21A8'
 
@@ -290,8 +291,9 @@ function ProfileView({ profile, onEdit }: { profile: BranchTechnicalProfile; onE
 }
 
 // ── Assets table ──────────────────────────────────────────────────────────
-function AssetsSection({ branchId, assets, onAdd, onEdit, onDelete }: {
+function AssetsSection({ branchId, branch, assets, onAdd, onEdit, onDelete }: {
   branchId: string
+  branch:   Branch
   assets:   BranchAsset[]
   onAdd:    () => void
   onEdit:   (a: BranchAsset) => void
@@ -315,11 +317,22 @@ function AssetsSection({ branchId, assets, onAdd, onEdit, onDelete }: {
             </span>
           )}
         </div>
-        <button onClick={onAdd}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-90"
-          style={{ background: `linear-gradient(135deg,${WE},#4C1D95)`, color: '#fff' }}>
-          <Plus size={11} /> إضافة جهاز
-        </button>
+        <div className="flex items-center gap-2">
+          {branchAssets.length > 0 && (
+            <button
+              onClick={() => exportBranchAssetsXlsx(branch, assets)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-80"
+              style={{ background: '#16A34A14', color: '#16A34A' }}
+              title="تصدير إلى Excel بنفس شكل نموذج الجرد">
+              <Download size={11} /> تصدير Excel
+            </button>
+          )}
+          <button onClick={onAdd}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-90"
+            style={{ background: `linear-gradient(135deg,${WE},#4C1D95)`, color: '#fff' }}>
+            <Plus size={11} /> إضافة جهاز
+          </button>
+        </div>
       </div>
 
       {branchAssets.length === 0 ? (
@@ -656,6 +669,7 @@ export default function BranchTechnicalPage() {
           {/* Assets table */}
           <AssetsSection
             branchId={selectedId}
+            branch={branch}
             assets={assets}
             onAdd={() => { setEditingAsset(null); setAssetModal(true) }}
             onEdit={a => { setEditingAsset(a); setAssetModal(true) }}
