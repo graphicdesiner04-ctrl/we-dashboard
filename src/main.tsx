@@ -85,6 +85,62 @@ import './index.css'
   // are SHARED storage keys. The hooks filter them in-memory by empIds, so
   // no cross-region records are ever visible in the UI. No storage cleanup needed.
 
+  // ── One-time migration: assignment history → employee.branchId ───────────
+  // Reads legacy 'assignments' from localStorage, derives each employee's
+  // current branch (latest open assignment), and writes branchId onto the
+  // employee record.  Runs on every startup but is idempotent.
+  const rawAssignments = storage.get<
+    { id: string; employeeId: string; branchId: string; fromDate: string; toDate: string | null }[] | null
+  >('assignments', null)
+
+  if (rawAssignments !== null && rawAssignments.length > 0) {
+    const rawEmpsForMigration = storage.get<{ id: string; branchId?: string }[] | null>('employees', null)
+    if (rawEmpsForMigration !== null && Array.isArray(rawEmpsForMigration)) {
+      // Build map: employeeId → current branchId (latest open assignment)
+      const currentBranchMap = new Map<string, string>()
+      const openAssignments = rawAssignments.filter(a => a.toDate === null)
+      // Sort so latest fromDate wins
+      openAssignments.sort((a, b) => b.fromDate.localeCompare(a.fromDate))
+      openAssignments.forEach(a => {
+        if (!currentBranchMap.has(a.employeeId)) {
+          currentBranchMap.set(a.employeeId, a.branchId)
+        }
+      })
+      // Write branchId onto employees that don't have one yet
+      const updated = rawEmpsForMigration.map(e =>
+        e.branchId ? e : { ...e, branchId: currentBranchMap.get(e.id) ?? '' }
+      )
+      if (JSON.stringify(updated) !== JSON.stringify(rawEmpsForMigration)) {
+        storage.set('employees', updated)
+      }
+    }
+  }
+
+  // ── One-time migration: evaluation scores ±8 → ±7 ────────────────────────
+  // Converts all stored evaluation records to use ±7 fixed value.
+  // score > 0 → 7 | score < 0 → -7 | score = 0 → 0 (kept as neutral note)
+  const rawEvals = storage.get<{ score: number }[] | null>('eval-records', null)
+  if (rawEvals !== null && Array.isArray(rawEvals)) {
+    const needsMigration = rawEvals.some(r => r.score !== 0 && Math.abs(r.score) !== 7)
+    if (needsMigration) {
+      const migrated = rawEvals.map(r => ({
+        ...r,
+        score: r.score > 0 ? 7 : r.score < 0 ? -7 : 0,
+      }))
+      storage.set('eval-records', migrated)
+    }
+  }
+
+  // ── Tombstone removed December eval seeds ─────────────────────────────────
+  // ev-seed-038 (2025-12-28) and ev-seed-067 (2026-12-07) were removed from
+  // seedData. Ensure they stay dead in any cached localStorage.
+  const removedEvalSeeds = ['ev-seed-038', 'ev-seed-067']
+  const existingTombstones = storage.get<string[]>('eval-records:deleted', [])
+  const toAdd = removedEvalSeeds.filter(id => !existingTombstones.includes(id))
+  if (toAdd.length > 0) {
+    storage.set('eval-records:deleted', [...existingTombstones, ...toAdd])
+  }
+
   // ── Schedule sync backfill ────────────────────────────────────────────────
   // Rebuilds ALL sync entries in schedule-entries / north-schedule-entries
   // from every record currently in storage.  Runs every startup — idempotent.

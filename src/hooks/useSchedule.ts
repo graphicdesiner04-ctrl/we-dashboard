@@ -113,26 +113,19 @@ export function useSchedule(region: Region = 'south') {
   const resetEntries = useCallback(() => setEntries([]), [])
 
   const alerts = useMemo((): ScheduleAlert[] => {
-    const assignments = storage.get<{ employeeId: string; branchId: string; toDate: string | null; fromDate: string }[]>(
-      'assignments', [],
-    )
-
-    function currentBranch(employeeId: string): string | null {
-      const open = assignments.filter(a => a.employeeId === employeeId && a.toDate === null)
-      if (!open.length) return null
-      return open.sort((a, b) => b.fromDate.localeCompare(a.fromDate))[0].branchId
-    }
+    // Current branch is now stored directly on employee.branchId
+    const empMap = new Map(employees.map(e => [e.id, e.branchId ?? null]))
 
     const today = new Date().toISOString().slice(0, 10)
     return entries
       .filter(e => e.date >= today && (e.cellType === 'branch' || !e.cellType) && !!e.branchId)
       .flatMap((entry): ScheduleAlert[] => {
-        const curBranch = currentBranch(entry.employeeId)
+        const curBranch = empMap.get(entry.employeeId) ?? null
         if (curBranch === null || curBranch === entry.branchId) return []
         return [{ entry, currentBranchId: curBranch, scheduledBranchId: entry.branchId! }]
       })
       .sort((a, b) => a.entry.date.localeCompare(b.entry.date))
-  }, [entries])
+  }, [entries, employees])
 
   return {
     employees, branches, entries,

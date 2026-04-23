@@ -77,26 +77,24 @@ function EvalForm({
   const [direction, setDirection] = useState<1 | -1>(() =>
     editing ? (editing.score >= 0 ? 1 : -1) : 1,
   )
-  const [degrees,    setDegrees]    = useState<number>(() =>
-    editing ? Math.abs(editing.score) : 1,
-  )
   const [employeeId, setEmployeeId] = useState(editing?.employeeId ?? '')
   const [note,       setNote]       = useState(editing?.note ?? '')
   const [date,       setDate]       = useState(editing?.date ?? todayStr())
   const [branchId,   setBranchId]   = useState(editing?.branchId ?? '')
 
-  const isEdit     = !!editing
-  const score      = direction * degrees
-  const scoreColor = direction === 1 ? GREEN : RED
+  const FIXED_DEGREES = 7
+  const isEdit        = !!editing
+  const score         = direction * FIXED_DEGREES
+  const scoreColor    = direction === 1 ? GREEN : RED
 
   function reset() {
-    setEmployeeId(''); setDirection(1); setDegrees(1)
+    setEmployeeId(''); setDirection(1)
     setNote(''); setDate(todayStr()); setBranchId('')
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!employeeId || !note.trim() || degrees < 1) return
+    if (!employeeId || !note.trim()) return
     onSubmit({ employeeId, score, note: note.trim(), date, branchId: branchId || undefined })
     if (!isEdit) reset()
   }
@@ -137,42 +135,32 @@ function EvalForm({
           </select>
         </div>
 
-        {/* Direction + Degrees */}
+        {/* Direction — fixed ±7 */}
         <div>
           <label className="block text-xs font-bold text-secondary mb-1.5">
-            النوع والدرجات
+            نوع التقييم
             <span className="mr-2 font-black text-sm" style={{ color: scoreColor }}>
-              ({score > 0 ? '+' : ''}{score} درجة)
+              ({score > 0 ? '+' : ''}{score} درجة ثابتة)
             </span>
           </label>
 
           {/* Direction toggle — full width buttons */}
-          <div className="flex gap-2 mb-2">
+          <div className="flex gap-2">
             <button type="button" onClick={() => setDirection(1)}
               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold border-2 transition-all"
               style={direction === 1
                 ? { background: `${GREEN}15`, borderColor: GREEN, color: GREEN }
                 : { borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}>
-              <ThumbsUp size={14} /> إيجابي
+              <ThumbsUp size={14} /> إيجابي +7
             </button>
             <button type="button" onClick={() => setDirection(-1)}
               className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold border-2 transition-all"
               style={direction === -1
                 ? { background: `${RED}15`, borderColor: RED, color: RED }
                 : { borderColor: 'var(--border)', color: 'var(--text-tertiary)' }}>
-              <ThumbsDown size={14} /> سلبي
+              <ThumbsDown size={14} /> سلبي −7
             </button>
           </div>
-
-          {/* Free number input — no steppers */}
-          <input
-            type="number" min={1}
-            value={degrees}
-            onChange={e => setDegrees(Math.max(1, +e.target.value || 1))}
-            className="we-input text-center font-black w-full"
-            style={{ color: scoreColor, fontSize: '1.5rem', letterSpacing: '0.05em' }}
-            placeholder="أدخل عدد الدرجات"
-          />
         </div>
 
         {/* Note */}
@@ -205,7 +193,7 @@ function EvalForm({
         </div>
 
         <button type="submit"
-          disabled={!employeeId || !note.trim() || degrees < 1}
+          disabled={!employeeId || !note.trim()}
           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
           style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
           {isEdit

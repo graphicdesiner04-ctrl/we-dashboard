@@ -8,15 +8,16 @@ export type Region = 'south' | 'north'
 export interface Employee {
   id: string
   user: string          // system login username
-  name: string          // Arabic display name
-  nameEn: string        // English name
+  name: string          // Arabic display name (legacy — may be empty)
+  nameEn: string        // English name (canonical display name)
   email: string
   mobile: string
   nationalId: string
-  employeeCode: string  // WE staff code
+  employeeCode: string  // WE staff code / numeric ID
   domainName?: string   // AD domain name (unique key)
-  level?: number        // job level (7 = Senior, 8 = Agent)
+  level?: number        // job level (7 = Senior, 8 = Agent, 6 = Supervisor)
   role?: EmployeeRole
+  branchId?: string     // current assigned branch (replaces AssignmentHistory)
   operatorAccount?: string
   dsPortalName?: string
   region?: Region       // 'south' | 'north' — defaults to 'south'

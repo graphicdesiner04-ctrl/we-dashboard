@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { Employee, Branch, InsteadOfRecord } from '@/types/hr'
 import { INSTEAD_OF_INITIAL } from '@/data/seedData'
-import { getCurrentBranchId } from '@/hooks/useAssignments'
+import { getCurrentBranchId } from '@/lib/getCurrentBranch'
 import { storage } from '@/lib/storage'
 import { useRegion } from '@/context/RegionContext'
 import { loadAllEmployees, loadAllBranches } from '@/lib/regionHelpers'

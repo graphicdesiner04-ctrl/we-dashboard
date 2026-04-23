@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { Employee, Branch, SickLeaveRecord } from '@/types/hr'
 import { SICK_LEAVE_INITIAL } from '@/data/seedData'
-import { getCurrentBranchId } from '@/hooks/useAssignments'
+import { getCurrentBranchId } from '@/lib/getCurrentBranch'
 import { storage } from '@/lib/storage'
 import { useRegion } from '@/context/RegionContext'
 import { loadAllEmployees, loadAllBranches } from '@/lib/regionHelpers'
