@@ -220,18 +220,27 @@ export default function EmployeesPage() {
   const [roleFilter,  setRoleFilter]  = useState<'' | 'Supervisor' | 'Senior' | 'Agent'>('')
   const [expandedId,  setExpandedId]  = useState<string | null>(null)
 
+  const ROLE_ORDER: Record<string, number> = { Supervisor: 0, Senior: 1, Agent: 2 }
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
-    return employees.filter(emp => {
-      if (roleFilter && emp.role !== roleFilter) return false
-      if (!q) return true
-      return (
-        getEmpName(emp).toLowerCase().includes(q) ||
-        (emp.domainName ?? '').toLowerCase().includes(q) ||
-        emp.employeeCode.includes(q) ||
-        emp.mobile.includes(q)
-      )
-    })
+    return employees
+      .filter(emp => {
+        if (roleFilter && emp.role !== roleFilter) return false
+        if (!q) return true
+        return (
+          getEmpName(emp).toLowerCase().includes(q) ||
+          (emp.domainName ?? '').toLowerCase().includes(q) ||
+          emp.employeeCode.includes(q) ||
+          emp.mobile.includes(q)
+        )
+      })
+      .sort((a, b) => {
+        const ra = ROLE_ORDER[a.role ?? 'Agent'] ?? 2
+        const rb = ROLE_ORDER[b.role ?? 'Agent'] ?? 2
+        if (ra !== rb) return ra - rb
+        return getEmpName(a).localeCompare(getEmpName(b))
+      })
   }, [employees, search, roleFilter])
 
   function openAdd()  { setEditTarget(null); setModalOpen(true) }
