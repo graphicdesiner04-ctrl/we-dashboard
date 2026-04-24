@@ -7,6 +7,7 @@ import { useMemo } from 'react'
 import { useSchedule } from '@/hooks/useSchedule'
 import { useRegion }   from '@/context/RegionContext'
 import { EMPLOYEES, BRANCHES, NORTH_EMPLOYEES, NORTH_BRANCHES, getEmpName } from '@/data/seedData'
+import { storage } from '@/lib/storage'
 import type { ScheduleEntry } from '@/types/hr'
 
 export type WorkDay = {
@@ -63,10 +64,21 @@ export function useDataEngine() {
     [regionBranches],
   )
 
-  const empMap = useMemo(
-    () => Object.fromEntries(regionEmployees.map(e => [e.id, e])),
-    [regionEmployees],
-  )
+  // empMap includes ALL employees (both regions) so name lookup never falls
+  // back to raw IDs when entries reference cross-region employees.
+  const empMap = useMemo(() => {
+    const allSeeds = [...EMPLOYEES, ...NORTH_EMPLOYEES]
+    const base = Object.fromEntries(allSeeds.map(e => [e.id, e]))
+    // Overlay with any localStorage overrides (e.g. edited names)
+    const stored = storage.get<{ id: string; name?: string; nameEn?: string; user?: string }[] | null>('employees', null)
+    if (stored) {
+      for (const e of stored) {
+        if (base[e.id]) base[e.id] = { ...base[e.id], ...e }
+        else base[e.id] = e as typeof base[string]
+      }
+    }
+    return base
+  }, [])
 
   // ── Working days (branch + visit only, unique per emp+branch+date) ──────
   const workDays = useMemo((): WorkDay[] => {
