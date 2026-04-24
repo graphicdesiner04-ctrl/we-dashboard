@@ -2,20 +2,49 @@ import { useState, useMemo, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import {
   CalendarDays, Plus, Pencil, Trash2, X, Save,
-  AlertTriangle, Upload, ChevronLeft, ChevronRight,
-  Download, Search,
+  AlertTriangle, Bell, Upload, ChevronLeft, ChevronRight,
+  Download, Search, Repeat2, BarChart2,
 } from 'lucide-react'
 import { useSchedule }      from '@/hooks/useSchedule'
+import { useChangeOU }      from '@/hooks/useChangeOU'
 import { useDataEngine }    from '@/hooks/useDataEngine'
 import { useWorkingDayOff } from '@/hooks/useWorkingDayOff'
 import { useRegion }        from '@/context/RegionContext'
 import type { Region }      from '@/types/hr'
+import type { OUChangeAlert } from '@/hooks/useDataEngine'
 import { getEmpName }       from '@/data/seedData'
-import type { ScheduleEntry, ScheduleCellType } from '@/types/hr'
+import type { ScheduleEntry, ScheduleCellType, ChangeOURecord } from '@/types/hr'
 import type { ScheduleInput } from '@/hooks/useSchedule'
-
+import type { ChangeOUInput } from '@/hooks/useChangeOU'
+import type { WorkingDayOffInput } from '@/hooks/useWorkingDayOff'
 
 const WE = '#6B21A8'
+
+// ── TEData Change OU defaults — region-specific ───────────────────────────
+function getCOUDefaults(region: Region) {
+  const base = {
+    roleName:      'Retail Technical Specialist',
+    cashBoxClosed: "we don't have cash box",
+    directManager: 'Raouf Emeel',
+    managerEmail:  'raouf.emeel@te.eg',
+    division:      'Raouf Emeel',
+    sector:        'قطاع شمال الصعيد',
+    affiliation:   'خدمة العملاء',
+  }
+  if (region === 'north') return {
+    ...base,
+    department:  'الدعم الفنى بمنافذ البيع وزيارات العملاء',
+    generalDept: 'الدعم الفنى بمنافذ البيع وزيارات العملاء',
+  }
+  return {
+    ...base,
+    department:  'إدارة الدعم الفنى بمنافذ البيع وزيارات العملاء',
+    generalDept: 'إدارة الدعم الفنى بمنافذ البيع وزيارات العملاء',
+  }
+}
+// Legacy constant for module-level EMPTY_COU (south default)
+const COU_DEFAULTS = getCOUDefaults('south')
+
 
 // ── Branch cell colors ────────────────────────────────────────────────────
 
@@ -589,6 +618,82 @@ function ImportModal({ employees, onClose, onApply }: {
   )
 }
 
+// ── Alert banner ──────────────────────────────────────────────────────────
+
+function AlertBanner({ alerts, employees, branches, onGoToChangeOU, onCreateCOU }: {
+  alerts:          ReturnType<typeof useSchedule>['alerts']
+  employees:       ReturnType<typeof useSchedule>['employees']
+  branches:        ReturnType<typeof useSchedule>['branches']
+  onGoToChangeOU:  () => void
+  onCreateCOU:     (preset: Partial<ChangeOUInput>) => void
+}) {
+  const [open, setOpen] = useState(true)
+  if (!alerts.length) return null
+  const empMap    = Object.fromEntries(employees.map(e => [e.id, e]))
+  const branchMap = Object.fromEntries(branches.map(b => [b.id, b]))
+  return (
+    <div className="mb-5 rounded-2xl overflow-hidden" style={{ border: '1px solid #F59E0B40', background: '#F59E0B08' }}>
+      <div className="flex items-center gap-3 px-4 py-3" style={{ direction: 'rtl' }}>
+        <button onClick={() => setOpen(o => !o)} className="flex-1 flex items-center gap-3 text-right">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: '#F59E0B18' }}>
+            <Bell size={14} style={{ color: '#F59E0B' }} />
+          </div>
+          <div className="flex-1 text-right">
+            <span className="text-sm font-black" style={{ color: '#F59E0B' }}>{alerts.length} تنبيه تغيير OU</span>
+            <span className="text-xs text-secondary mr-2">— موظفون مجدولون في فرع مختلف عن تكليفهم</span>
+          </div>
+          <AlertTriangle size={16} style={{ color: '#F59E0B' }} />
+        </button>
+        <button onClick={onGoToChangeOU}
+          className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all hover:opacity-80"
+          style={{ background: '#F59E0B20', color: '#F59E0B' }}>
+          <Repeat2 size={11} /> سجل تغيير OU
+        </button>
+      </div>
+      {open && (
+        <div className="border-t divide-y" style={{ borderColor: '#F59E0B20', direction: 'rtl' }}>
+          {alerts.map(al => {
+            const emp = empMap[al.entry.employeeId]
+            const cur = branchMap[al.currentBranchId ?? '']
+            const sch = branchMap[al.scheduledBranchId]
+            const ds  = new Date(al.entry.date + 'T00:00:00').toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })
+            return (
+              <div key={al.entry.id} className="px-4 py-3 flex items-start gap-3">
+                <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" style={{ color: '#F59E0B' }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-primary">{emp ? getEmpName(emp) : '—'}<span className="font-normal text-secondary"> · {ds}</span></p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                    من: <span className="font-semibold mx-1" style={{ color: '#DC2626' }}>{cur?.storeName ?? '—'}</span>
+                    إلى: <span className="font-semibold mx-1" style={{ color: '#059669' }}>{sch?.storeName ?? '—'}</span>
+                    <span className="font-black mr-2" style={{ color: '#F59E0B' }}>← مطلوب تغيير OU</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => onCreateCOU({
+                    userAccount:    emp?.user || emp?.domainName || '',
+                    accountName:    emp ? getEmpName(emp) : '',
+                    email:          (emp as any)?.email || '',
+                    mobile:         (emp as any)?.mobile || '',
+                    idNumber:       (emp as any)?.nationalId || '',
+                    employeeNumber: emp?.employeeCode || '',
+                    oldOU:          cur ? (cur.storeNameAr || cur.storeName) : '',
+                    oldOUCode:      cur?.ou || '',
+                    newOU:          sch ? (sch.storeNameAr || sch.storeName) : '',
+                    newOUCode:      sch?.ou || '',
+                  })}
+                  className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all hover:opacity-80"
+                  style={{ background: '#F59E0B20', color: '#F59E0B', whiteSpace: 'nowrap' }}>
+                  <Repeat2 size={10} /> إنشاء OU
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Filter bar ────────────────────────────────────────────────────────────
 
 function FilterBar({ search, branch, dateFrom, dateTo, branches, onSearch, onBranch, onDateFrom, onDateTo, onClear }: {
@@ -727,6 +832,544 @@ function MatrixGrid({ days, employees, branches, entries, onCellClick }: {
   )
 }
 
+// ── List view ─────────────────────────────────────────────────────────────
+
+function ListView({ entries, employees, branches, onEdit, onDelete }: {
+  entries:   ScheduleEntry[]
+  employees: ReturnType<typeof useSchedule>['employees']
+  branches:  ReturnType<typeof useSchedule>['branches']
+  onEdit:    (e: ScheduleEntry) => void
+  onDelete:  (id: string) => void
+}) {
+  const empMap    = Object.fromEntries(employees.map(e => [e.id, e]))
+  const branchMap = Object.fromEntries(branches.map(b => [b.id, b]))
+  const today     = todayStr()
+  const sorted    = [...entries].sort((a, b) => a.date.localeCompare(b.date))
+  const typeLabel: Record<ScheduleCellType, string> = { branch: 'فرع', off: 'راحة', annual: 'سنوي', sick: 'مريض', visit: 'زيارة', note: 'ملاحظة', empty: '—', swap: '↔ تبديل' }
+  if (!sorted.length) return (
+    <div className="card p-12 text-center"><CalendarDays size={38} className="text-tertiary mx-auto mb-3" strokeWidth={1.4} /><p className="text-secondary font-semibold text-sm">لا توجد مناوبات</p></div>
+  )
+  return (
+    <div className="card overflow-hidden">
+      <div className="table-scroll">
+        <table className="we-table w-full min-w-[600px]">
+          <thead>
+            <tr>
+              <th className="text-right">التاريخ</th><th className="text-right">الموظف</th>
+              <th className="text-right">النوع</th><th className="text-right">الفرع</th>
+              <th className="text-right">الوقت</th><th className="text-right">ملاحظة</th>
+              <th className="text-right">إجراءات</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(e => {
+              const emp = empMap[e.employeeId], branch = e.branchId ? branchMap[e.branchId] : null
+              return (
+                <tr key={e.id} style={{ opacity: e.date < today ? 0.55 : 1 }}>
+                  <td><span className="num text-xs font-semibold text-secondary">{new Date(e.date+'T00:00:00').toLocaleDateString('ar-EG',{weekday:'short',day:'numeric',month:'short'})}</span></td>
+                  <td><span className="font-semibold text-primary text-sm">{emp ? getEmpName(emp) : '—'}</span></td>
+                  <td><span className="text-xs text-secondary">{typeLabel[e.cellType??'branch']}</span></td>
+                  <td><span className="text-xs text-secondary">{branch?(branch.storeNameAr||branch.storeName):'—'}</span></td>
+                  <td><span className="text-xs text-tertiary num">{e.startTime?`${e.startTime}${e.endTime?`–${e.endTime}`:''}` :'—'}</span></td>
+                  <td><span className="text-xs text-tertiary">{e.note||'—'}</span></td>
+                  <td>
+                    <div className="flex gap-1">
+                      <button onClick={() => onEdit(e)} className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors"><Pencil size={13} /></button>
+                      <button onClick={() => onDelete(e.id)} className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={13} /></button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── Change OU Modal ───────────────────────────────────────────────────────
+
+
+function ChangeOUModal({ editing, branches, employees, preset, couDefaults, onClose, onSave, onDelete }: {
+  editing:      ChangeOURecord | null
+  branches:     ReturnType<typeof useSchedule>['branches']
+  employees:    ReturnType<typeof useSchedule>['employees']
+  preset?:      Partial<ChangeOUInput>
+  couDefaults?: ReturnType<typeof getCOUDefaults>
+  onClose:      () => void
+  onSave:       (input: ChangeOUInput) => void
+  onDelete?:    () => void
+}) {
+  const defaults = couDefaults ?? COU_DEFAULTS
+  const emptyCOU: ChangeOUInput = {
+    userAccount: '', accountName: '', email: '', mobile: '', idNumber: '',
+    ...defaults, oldOU: '', newOU: '',
+    oldOUCode: '', newOUCode: '', employeeNumber: '', note: '',
+  }
+  const [form, setForm] = useState<ChangeOUInput>(
+    editing ? { ...editing } : { ...emptyCOU, ...preset }
+  )
+  const [, setEmpSearch] = useState(form.userAccount || '')
+
+  function f(k: keyof ChangeOUInput, v: string) { setForm(p => ({ ...p, [k]: v })) }
+
+  function fillFromEmployee(empId: string) {
+    const emp = employees.find(e => e.id === empId || e.employeeCode === empId)
+    if (!emp) return
+    setForm(p => ({
+      ...p,
+      userAccount:    emp.user || emp.domainName || '',
+      accountName:    getEmpName(emp),
+      email:          (emp as any).email || '',
+      mobile:         (emp as any).mobile || '',
+      idNumber:       (emp as any).nationalId || '',
+      employeeNumber: emp.employeeCode || '',
+    }))
+    setEmpSearch(emp.employeeCode + ' ' + getEmpName(emp))
+  }
+  function selectOU(type: 'old' | 'new', name: string) {
+    const br = branches.find(b => (b.storeNameAr || b.storeName) === name)
+    if (type === 'old') setForm(p => ({ ...p, oldOU: name, oldOUCode: br?.ou ?? p.oldOUCode }))
+    else                setForm(p => ({ ...p, newOU: name, newOUCode: br?.ou ?? p.newOUCode }))
+  }
+  const branchNames = branches.map(b => b.storeNameAr || b.storeName)
+  const Label = ({ children }: { children: React.ReactNode }) => (
+    <label className="block text-xs font-bold text-secondary mb-1">{children}</label>
+  )
+  const Inp = ({ k, placeholder, type = 'text' }: { k: keyof ChangeOUInput; placeholder?: string; type?: string }) => (
+    <input type={type} value={form[k]} onChange={e => f(k, e.target.value)}
+      placeholder={placeholder} className="we-input text-xs" />
+  )
+  const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+    <div>
+      <p className="text-[10px] font-black uppercase tracking-widest text-tertiary mb-2 mt-4">{title}</p>
+      <div className="grid grid-cols-2 gap-3">{children}</div>
+    </div>
+  )
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.65)' }}>
+      <div className="w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', maxHeight: '92vh' }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: `${WE}16` }}>
+              <Repeat2 size={14} style={{ color: WE }} />
+            </div>
+            <h2 className="text-sm font-black text-primary">{editing ? 'تعديل سجل تغيير OU' : 'إضافة سجل تغيير OU'}</h2>
+          </div>
+          <div className="flex items-center gap-1">
+            {onDelete && <button onClick={onDelete} className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={14} /></button>}
+            <button onClick={onClose} className="p-1.5 rounded-lg text-tertiary hover:text-primary hover:bg-elevated transition-colors"><X size={16} /></button>
+          </div>
+        </div>
+        {/* Scrollable form */}
+        <div className="flex-1 overflow-y-auto p-5" style={{ direction: 'rtl' }}>
+          {/* Quick employee fill */}
+          {!editing && (
+            <div className="mb-4 p-3 rounded-xl" style={{ background: `${WE}10`, border: `1px solid ${WE}22` }}>
+              <p className="text-[10px] font-black text-tertiary uppercase tracking-widest mb-2">تعبئة تلقائية من الموظف</p>
+              <div className="flex gap-2">
+                <select className="we-input text-xs flex-1"
+                  value="" onChange={e => e.target.value && fillFromEmployee(e.target.value)}>
+                  <option value="">اختر موظف للتعبئة التلقائية...</option>
+                  {employees.sort((a,b)=>+a.employeeCode - +b.employeeCode).map(e => (
+                    <option key={e.id} value={e.id}>{e.employeeCode} — {getEmpName(e)}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+          <Section title="بيانات الموظف">
+            <div><Label>User Account *</Label><Inp k="userAccount" placeholder="Ahmed.Zaref" /></div>
+            <div><Label>الاسم الكامل *</Label><Inp k="accountName" placeholder="Ahmed Zarief Mohamed" /></div>
+            <div><Label>رقم الهوية</Label><Inp k="idNumber" placeholder="29405282400838" /></div>
+            <div><Label>رقم العامل</Label><Inp k="employeeNumber" placeholder="9070" /></div>
+            <div><Label>الجوال</Label><Inp k="mobile" placeholder="01xxxxxxxxx" /></div>
+            <div><Label>البريد الإلكتروني</Label><Inp k="email" placeholder="name@te.eg" /></div>
+            <div className="col-span-2"><Label>المسمى الوظيفي (Role Name)</Label><Inp k="roleName" /></div>
+          </Section>
+
+          <Section title="تغيير الفرع">
+            <div>
+              <Label>الفرع القديم (Old OU) *</Label>
+              <select value={form.oldOU} onChange={e => selectOU('old', e.target.value)} className="we-input text-xs">
+                <option value="">اختر الفرع</option>
+                {branchNames.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>الفرع الجديد (New OU) *</Label>
+              <select value={form.newOU} onChange={e => selectOU('new', e.target.value)} className="we-input text-xs">
+                <option value="">اختر الفرع</option>
+                {branchNames.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <div><Label>Old OU Code</Label><Inp k="oldOUCode" placeholder="wS09Bi010921" /></div>
+            <div><Label>New OU Code</Label><Inp k="newOUCode" placeholder="wS08Bb010921" /></div>
+            <div className="col-span-2"><Label>Cash Box Closed</Label><Inp k="cashBoxClosed" /></div>
+          </Section>
+
+          <Section title="الإدارة">
+            <div><Label>المدير المباشر</Label><Inp k="directManager" placeholder="Raouf Emeel" /></div>
+            <div><Label>ايميل المدير</Label><Inp k="managerEmail" placeholder="raouf.emeel@te.eg" /></div>
+            <div className="col-span-2"><Label>Division</Label><Inp k="division" /></div>
+          </Section>
+
+          <Section title="الهيكل التنظيمي">
+            <div><Label>الادارة</Label><Inp k="department" /></div>
+            <div><Label>الادارة العامة</Label><Inp k="generalDept" /></div>
+            <div><Label>القطاع</Label><Inp k="sector" /></div>
+            <div><Label>التابعية</Label><Inp k="affiliation" /></div>
+          </Section>
+
+          <div className="mt-4">
+            <Label>ملاحظة</Label>
+            <input value={form.note} onChange={e => f('note', e.target.value)} className="we-input text-xs w-full" placeholder="ملاحظة..." />
+          </div>
+        </div>
+        {/* Footer */}
+        <div className="px-5 pb-5 flex gap-3 flex-shrink-0 border-t pt-4" style={{ borderColor: 'var(--border)', direction: 'rtl' }}>
+          <button onClick={() => { if (!form.userAccount || !form.oldOU || !form.newOU) { alert('يرجى ملء User Account والفرع القديم والجديد'); return } onSave(form) }}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90"
+            style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
+            {editing ? <><Save size={14} />حفظ</> : <><Plus size={14} />إضافة</>}
+          </button>
+          <button onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-elevated transition-colors" style={{ color: 'var(--text-secondary)' }}>إلغاء</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Change OU view ────────────────────────────────────────────────────────
+
+function ChangeOUView({ records, autoAlerts, employees, branches, couDefaults, onAdd, onEdit, onDelete, onDocument }: {
+  records:     ChangeOURecord[]
+  autoAlerts:  OUChangeAlert[]
+  employees:   ReturnType<typeof useSchedule>['employees']
+  branches:    ReturnType<typeof useSchedule>['branches']
+  couDefaults: ReturnType<typeof getCOUDefaults>
+  onAdd:       () => void
+  onEdit:      (r: ChangeOURecord) => void
+  onDelete:    (id: string) => void
+  onDocument:  (alert: OUChangeAlert) => void
+}) {
+  const empMap    = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
+  const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
+
+  // Build a complete row for any alert (auto or manual)
+  function alertToRow(a: OUChangeAlert) {
+    const emp    = empMap[a.employeeId]
+    const fromBr = branchMap[a.fromBranchId]
+    const toBr   = branchMap[a.toBranchId]
+    return {
+      'Type':                   'TEData',
+      'User Account':           emp?.domainName ?? emp?.user ?? a.employeeName,
+      'Account Name':           a.employeeName,
+      'Email':                  emp?.email ?? '',
+      'Mobile':                 emp?.mobile ?? '',
+      'ID Number':              emp?.nationalId ?? '',
+      'Role Name':              couDefaults.roleName,
+      'Old OU':                 a.fromBranch,
+      'New OU':                 a.toBranch,
+      'Cash Box Closed':        couDefaults.cashBoxClosed,
+      'Direct Manager':         couDefaults.directManager,
+      'Division':               couDefaults.division,
+      'Old OU Code':            fromBr?.ou ?? '',
+      'New OU Code':            toBr?.ou ?? '',
+      'الاداره':                couDefaults.department,
+      'الادارة العامه':         couDefaults.generalDept,
+      'القطاع':                 couDefaults.sector,
+      'النيابه':                couDefaults.affiliation,
+      'ايميل المدير المباشر':  couDefaults.managerEmail,
+      'رقم العامل':             emp?.employeeCode ?? '',
+    }
+  }
+
+  function exportAll() {
+    // Export auto-detected alerts (complete, auto-filled) + manual documented records
+    const autoRows = autoAlerts.map(a => alertToRow(a))
+    const manualRows = records.map(r => ({
+      'Type':                   'TEData',
+      'User Account':           r.userAccount,
+      'Account Name':           r.accountName,
+      'Email':                  r.email,
+      'Mobile':                 r.mobile,
+      'ID Number':              r.idNumber,
+      'Role Name':              r.roleName,
+      'Old OU':                 r.oldOU,
+      'New OU':                 r.newOU,
+      'Cash Box Closed':        r.cashBoxClosed,
+      'Direct Manager':         r.directManager,
+      'Division':               r.division,
+      'Old OU Code':            r.oldOUCode,
+      'New OU Code':            r.newOUCode,
+      'الاداره':                r.department,
+      'الادارة العامه':         r.generalDept,
+      'القطاع':                 r.sector,
+      'النيابه':                r.affiliation,
+      'ايميل المدير المباشر':  r.managerEmail,
+      'رقم العامل':             r.employeeNumber,
+    }))
+
+    // Combine: auto first, then manual (avoid duplicates by userAccount+date is hard — just merge)
+    const rows = [...autoRows, ...manualRows]
+    if (!rows.length) { alert('لا توجد بيانات للتصدير'); return }
+
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [10,20,28,22,14,18,28,14,14,20,20,20,18,18,36,36,18,14,24,12].map(wch => ({ wch }))
+    XLSX.utils.book_append_sheet(wb, ws, 'Change OU')
+    const label = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    XLSX.writeFile(wb, `Change OU - ${label}.xlsx`)
+  }
+
+  // Group auto-alerts by date for display
+  const alertsByDate = useMemo(() => {
+    const map = new Map<string, OUChangeAlert[]>()
+    for (const a of autoAlerts) {
+      const arr = map.get(a.date) ?? []
+      arr.push(a)
+      map.set(a.date, arr)
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [autoAlerts])
+
+  return (
+    <div style={{ direction: 'rtl' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-sm font-black text-primary">تغيير OU</h2>
+          <p className="text-xs text-secondary mt-0.5">
+            <span className="font-bold" style={{ color: '#F59E0B' }}>{autoAlerts.length} كشف تلقائي</span>
+            {records.length > 0 && <span className="mx-1.5 text-tertiary">·</span>}
+            {records.length > 0 && <span>{records.length} سجل موثَّق</span>}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={exportAll}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg,#16A34A,#15803D)' }}>
+            <Download size={12} /> تصدير Excel
+          </button>
+          <button onClick={onAdd}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
+            style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
+            <Plus size={12} /> إضافة يدوي
+          </button>
+        </div>
+      </div>
+
+      {/* ── AUTO-DETECTED from schedule ─────────────────────────────────── */}
+      {autoAlerts.length > 0 && (
+        <div className="mb-5">
+          <div className="flex items-center gap-2 mb-3 px-1">
+            <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: '#F59E0B20' }}>
+              <Bell size={12} style={{ color: '#F59E0B' }} />
+            </div>
+            <span className="text-xs font-black text-primary">كشف تلقائي من الجدول</span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: '#F59E0B20', color: '#F59E0B' }}>
+              {autoAlerts.length} حركة
+            </span>
+            <span className="text-[10px] text-tertiary mr-auto">
+              الجدول اكتشف تلقائياً التواريخ اللي تغيّر فيها فرع الموظف
+            </span>
+          </div>
+
+          <div className="card overflow-hidden">
+            {alertsByDate.map(([date, alerts]) => (
+              <div key={date}>
+                {/* Date header */}
+                <div className="px-4 py-2 flex items-center gap-2"
+                  style={{ background: '#F59E0B08', borderBottom: '1px solid #F59E0B20' }}>
+                  <span className="text-[11px] font-black num" style={{ color: '#F59E0B' }}>
+                    {new Date(date + 'T00:00:00').toLocaleDateString('ar-EG', {
+                      weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+                    })}
+                  </span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                    style={{ background: '#F59E0B20', color: '#F59E0B' }}>
+                    {alerts.length} موظف
+                  </span>
+                </div>
+
+                {/* Employees under this date */}
+                <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+                  {alerts.map(a => {
+                    const emp    = empMap[a.employeeId]
+                    const fromBr = branchMap[a.fromBranchId]
+                    const toBr   = branchMap[a.toBranchId]
+                    return (
+                      <div key={`${a.employeeId}-${a.date}`}
+                        className="px-4 py-3 flex items-start gap-3">
+                        {/* Avatar */}
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0 mt-0.5"
+                          style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
+                          {a.employeeName.charAt(0)}
+                        </div>
+
+                        {/* Full data block */}
+                        <div className="flex-1 min-w-0">
+                          {/* Row 1: Name + domain + code */}
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="font-bold text-sm text-primary">{a.employeeName}</span>
+                            {emp?.domainName && (
+                              <span className="text-[10px] font-mono text-tertiary">{emp.domainName}</span>
+                            )}
+                            {emp?.employeeCode && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md num"
+                                style={{ background: `${WE}12`, color: WE }}>
+                                {emp.employeeCode}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Row 2: Old OU → New OU with codes */}
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <div className="flex flex-col items-start">
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg"
+                                style={{ background: 'rgba(220,38,38,0.12)', color: '#DC2626' }}>
+                                {a.fromBranch}
+                              </span>
+                              {fromBr?.ou && (
+                                <span className="text-[9px] font-mono text-tertiary mt-0.5 px-2">{fromBr.ou}</span>
+                              )}
+                            </div>
+                            <span className="text-tertiary text-xs">←</span>
+                            <div className="flex flex-col items-start">
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg"
+                                style={{ background: 'rgba(5,150,105,0.12)', color: '#059669' }}>
+                                {a.toBranch}
+                              </span>
+                              {toBr?.ou && (
+                                <span className="text-[9px] font-mono text-tertiary mt-0.5 px-2">{toBr.ou}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Row 3: Email + Mobile */}
+                          <div className="flex items-center gap-3 flex-wrap">
+                            {emp?.email && (
+                              <span className="text-[10px] text-tertiary font-mono">{emp.email}</span>
+                            )}
+                            {emp?.mobile && (
+                              <span className="text-[10px] num text-tertiary">{emp.mobile}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Document button */}
+                        <button onClick={() => onDocument(a)}
+                          className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-80 mt-0.5"
+                          style={{ background: `${WE}15`, color: WE }}>
+                          <Repeat2 size={11} /> توثيق OU
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Info note */}
+      <div className="card p-3 mb-4 flex items-start gap-2" style={{ background: '#F59E0B08', border: '1px solid #F59E0B30' }}>
+        <AlertTriangle size={13} style={{ color: '#F59E0B', flexShrink: 0, marginTop: 1 }} />
+        <p className="text-xs" style={{ color: '#F59E0B' }}>
+          السجلات الموثَّقة تُستخدم لإرسالها لنظام TEData. اضغط "توثيق OU" بجانب أي حركة تلقائية لإنشاء سجل رسمي، ثم "تصدير Excel".
+        </p>
+      </div>
+
+      {!records.length ? (
+        <div className="card p-14 flex flex-col items-center gap-3 text-center">
+          <Repeat2 size={40} className="text-tertiary" strokeWidth={1.3} />
+          <p className="text-secondary font-semibold text-sm">لا توجد سجلات تغيير OU</p>
+          <p className="text-tertiary text-xs">أضف سجلاً جديداً عند نقل موظف من فرع لآخر</p>
+          <button onClick={onAdd}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white mt-2 transition-all hover:opacity-90"
+            style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
+            <Plus size={12} /> إضافة أول سجل
+          </button>
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          {/* Desktop */}
+          <div className="hidden md:block table-scroll">
+            <table className="we-table w-full min-w-[700px]">
+              <thead>
+                <tr>
+                  <th className="text-right">رقم العامل</th>
+                  <th className="text-right">User Account</th>
+                  <th className="text-right">الاسم</th>
+                  <th className="text-right">من</th>
+                  <th className="text-right">إلى</th>
+                  <th className="text-right">المدير</th>
+                  <th className="text-right">إجراءات</th>
+                </tr>
+              </thead>
+              <tbody>
+                {records.map(r => (
+                  <tr key={r.id}>
+                    <td><span className="num text-xs font-bold" style={{ color: WE }}>{r.employeeNumber || '—'}</span></td>
+                    <td><span className="text-xs font-mono text-primary">{r.userAccount}</span></td>
+                    <td><span className="text-sm font-semibold text-primary">{r.accountName || '—'}</span></td>
+                    <td>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'rgba(220,38,38,0.12)', color: '#fca5a5' }}>
+                        {r.oldOU}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: 'rgba(22,163,74,0.12)', color: '#86efac' }}>
+                        {r.newOU}
+                      </span>
+                    </td>
+                    <td><span className="text-xs text-secondary">{r.directManager || '—'}</span></td>
+                    <td>
+                      <div className="flex gap-1">
+                        <button onClick={() => onEdit(r)} className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors"><Pencil size={13} /></button>
+                        <button onClick={() => onDelete(r.id)} className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={13} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Mobile */}
+          <div className="block md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
+            {records.map(r => (
+              <div key={r.id} className="p-4">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div>
+                    <p className="font-bold text-primary text-sm">{r.accountName || r.userAccount}</p>
+                    <p className="text-xs text-secondary font-mono mt-0.5">{r.userAccount}</p>
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={() => onEdit(r)} className="p-1.5 rounded-lg text-tertiary hover:text-purple-400 hover:bg-purple-500/10 transition-colors"><Pencil size={13} /></button>
+                    <button onClick={() => onDelete(r.id)} className="p-1.5 rounded-lg text-tertiary hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={13} /></button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="px-2 py-0.5 rounded-full font-semibold" style={{ background: 'rgba(220,38,38,0.12)', color: '#fca5a5' }}>{r.oldOU}</span>
+                  <span className="text-tertiary">→</span>
+                  <span className="px-2 py-0.5 rounded-full font-semibold" style={{ background: 'rgba(22,163,74,0.12)', color: '#86efac' }}>{r.newOU}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── 6-day branch rule helpers ─────────────────────────────────────────────
 
 const SIX_DAY_BRANCHES = new Set(['br-03', 'br-07', 'br-08'])
@@ -752,6 +1395,434 @@ function getFridaysInMonth(year: number, month: number): string[] {
   return fridays
 }
 
+// ── Analytics view ────────────────────────────────────────────────────────
+
+function AnalyticsView({ entries, employees, branches, wdoRecords, addWDORecord }: {
+  entries:      ReturnType<typeof useSchedule>['entries']
+  employees:    ReturnType<typeof useSchedule>['employees']
+  branches:     ReturnType<typeof useSchedule>['branches']
+  wdoRecords:   ReturnType<typeof useWorkingDayOff>['records']
+  addWDORecord: (input: WorkingDayOffInput) => void
+}) {
+  const empMap    = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
+  const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
+
+  // Aggregates: per employee per branch, count of cellTypes
+  const stats = useMemo(() => {
+    const byEmp: Record<string, {
+      totalWork: number; totalOff: number; totalAnnual: number
+      totalSick: number; totalVisit: number; totalSwap: number
+      byBranch: Record<string, number>
+    }> = {}
+    for (const e of entries) {
+      if (!byEmp[e.employeeId]) byEmp[e.employeeId] = { totalWork: 0, totalOff: 0, totalAnnual: 0, totalSick: 0, totalVisit: 0, totalSwap: 0, byBranch: {} }
+      const s = byEmp[e.employeeId]
+      const ct = e.cellType ?? 'branch'
+      if (ct === 'branch')  { s.totalWork++; if (e.branchId) s.byBranch[e.branchId] = (s.byBranch[e.branchId] || 0) + 1 }
+      if (ct === 'swap')    { s.totalSwap++; s.totalWork++; if (e.branchId) s.byBranch[e.branchId] = (s.byBranch[e.branchId] || 0) + 1 }
+      if (ct === 'off')     s.totalOff++
+      if (ct === 'annual')  s.totalAnnual++
+      if (ct === 'sick')    s.totalSick++
+      if (ct === 'visit')   { s.totalVisit++; if (e.branchId) s.byBranch[e.branchId] = (s.byBranch[e.branchId] || 0) + 1 }
+    }
+    return byEmp
+  }, [entries])
+
+  // ── 6-day branch compensation proposals ───────────────────────────────────
+  const sixDayProposals = useMemo(() => {
+    // Group by (employeeId, YYYY-MM) → distinct ISO weeks at 6-day branches
+    const byEmpMonth: Record<string, Record<string, { weeks: Set<string>; primaryBranch: string }>> = {}
+
+    for (const e of entries) {
+      if (!e.branchId || !SIX_DAY_BRANCHES.has(e.branchId)) continue
+      const ct = e.cellType ?? 'branch'
+      if (ct !== 'branch' && ct !== 'visit' && ct !== 'swap') continue
+
+      const month = e.date.slice(0, 7)
+      const weekKey = getISOWeekKey(e.date)
+      if (!byEmpMonth[e.employeeId]) byEmpMonth[e.employeeId] = {}
+      if (!byEmpMonth[e.employeeId][month]) {
+        byEmpMonth[e.employeeId][month] = { weeks: new Set(), primaryBranch: e.branchId }
+      }
+      byEmpMonth[e.employeeId][month].weeks.add(weekKey)
+    }
+
+    type Proposal = {
+      employeeId:   string
+      month:        string   // 'YYYY-MM'
+      weeksWorked:  number
+      compEarned:   number
+      fridays:      string[] // proposed comp Fridays (YYYY-MM-DD)
+      primaryBranch: string
+    }
+
+    const proposals: Proposal[] = []
+    for (const [empId, monthMap] of Object.entries(byEmpMonth)) {
+      for (const [month, { weeks, primaryBranch }] of Object.entries(monthMap)) {
+        const weeksWorked = weeks.size
+        const compEarned  = Math.floor(weeksWorked / 2)
+        if (compEarned === 0) continue
+        const [yr, mo] = month.split('-').map(Number)
+        const allFridays = getFridaysInMonth(yr, mo)
+        proposals.push({
+          employeeId: empId, month, weeksWorked, compEarned,
+          fridays: allFridays.slice(0, compEarned),
+          primaryBranch,
+        })
+      }
+    }
+    return proposals.sort((a, b) => b.month.localeCompare(a.month))
+  }, [entries])
+
+  // WDO entries already added (for deduplication)
+  const wdoSet = useMemo(() => new Set(wdoRecords.map(r => `${r.employeeId}|${r.date}`)), [wdoRecords])
+
+  // Branch coverage stats
+  const branchStats = useMemo(() => {
+    const byBr: Record<string, { days: number; employees: Set<string> }> = {}
+    for (const e of entries) {
+      const ct = e.cellType ?? 'branch'
+      if ((ct === 'branch' || ct === 'visit') && e.branchId) {
+        if (!byBr[e.branchId]) byBr[e.branchId] = { days: 0, employees: new Set() }
+        byBr[e.branchId].days++
+        byBr[e.branchId].employees.add(e.employeeId)
+      }
+    }
+    return byBr
+  }, [entries])
+
+  const totalWork    = useMemo(() => entries.filter(e => (e.cellType ?? 'branch') === 'branch' || e.cellType === 'swap').length, [entries])
+  const totalSwap    = useMemo(() => entries.filter(e => e.cellType === 'swap').length, [entries])
+  const totalAnnual  = useMemo(() => entries.filter(e => e.cellType === 'annual').length, [entries])
+  const totalSick    = useMemo(() => entries.filter(e => e.cellType === 'sick').length, [entries])
+  const totalVisit   = useMemo(() => entries.filter(e => e.cellType === 'visit').length, [entries])
+  const totalOff     = useMemo(() => entries.filter(e => e.cellType === 'off').length, [entries])
+
+  function exportExcel() {
+    const wb = XLSX.utils.book_new()
+
+    // Sheet 1: Employee stats
+    const empRows = employees.map(emp => {
+      const s = stats[emp.id]
+      if (!s) return { 'الموظف': getEmpName(emp), 'الكود': emp.employeeCode, 'أيام عمل': 0, 'راحة': 0, 'سنوي': 0, 'مريض': 0, 'زيارة': 0 }
+      const branchCols: Record<string, number> = {}
+      for (const [brId, cnt] of Object.entries(s.byBranch)) {
+        const br = branchMap[brId]
+        branchCols[br?.storeNameAr || br?.storeName || brId] = cnt
+      }
+      return { 'الموظف': getEmpName(emp), 'الكود': emp.employeeCode, 'أيام عمل': s.totalWork, 'راحة': s.totalOff, 'سنوي': s.totalAnnual, 'مريض': s.totalSick, 'زيارة': s.totalVisit, ...branchCols }
+    })
+    const ws1 = XLSX.utils.json_to_sheet(empRows)
+    XLSX.utils.book_append_sheet(wb, ws1, 'إحصائيات الموظفين')
+
+    // Sheet 2: Branch stats
+    const brRows = branches.map(br => {
+      const s = branchStats[br.id]
+      return {
+        'الفرع': br.storeNameAr || br.storeName,
+        'أيام تغطية': s?.days || 0,
+        'عدد الموظفين': s?.employees.size || 0,
+      }
+    })
+    const ws2 = XLSX.utils.json_to_sheet(brRows)
+    XLSX.utils.book_append_sheet(wb, ws2, 'إحصائيات الفروع')
+
+    XLSX.writeFile(wb, `Schedule Analytics - ${new Date().toLocaleDateString('en-GB').replace(/\//g,'-')}.xlsx`)
+  }
+
+  return (
+    <div style={{ direction: 'rtl' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="text-sm font-black text-primary">تحليلات الجدول</h2>
+          <p className="text-xs text-secondary mt-0.5">{entries.length} خلية إجمالاً</p>
+        </div>
+        <button onClick={exportExcel}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white transition-all hover:opacity-90"
+          style={{ background: 'linear-gradient(135deg,#16A34A,#15803D)' }}>
+          <Download size={12} /> تصدير Excel
+        </button>
+      </div>
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-6">
+        {[
+          { label: 'أيام عمل',  value: totalWork,   bg: `${WE}18`,                    color: WE           },
+          { label: '↔ تبديل',   value: totalSwap,   bg: 'rgba(20,184,166,0.15)',       color: '#5eead4'    },
+          { label: 'راحة',      value: totalOff,    bg: 'rgba(75,85,99,0.18)',         color: '#9ca3af'    },
+          { label: 'سنوي',      value: totalAnnual, bg: 'rgba(245,158,11,0.18)',       color: '#fbbf24'    },
+          { label: 'مريض',      value: totalSick,   bg: 'rgba(239,68,68,0.18)',        color: '#fca5a5'    },
+          { label: 'زيارة',     value: totalVisit,  bg: 'rgba(245,158,11,0.14)',       color: '#fcd34d'    },
+        ].map(k => (
+          <div key={k.label} className="card p-4 text-center" style={{ background: k.bg, border: `1px solid ${k.color}22` }}>
+            <p className="text-2xl font-black" style={{ color: k.color }}>{k.value}</p>
+            <p className="text-xs text-secondary mt-1">{k.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Employee cards — branch breakdown */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-3">
+          <BarChart2 size={14} style={{ color: WE }} />
+          <h3 className="text-xs font-black text-primary">إحصائيات الموظفين</h3>
+          <span className="text-xs text-tertiary">· يتحدث تلقائياً مع الجدول</span>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+          {employees.map(emp => {
+            const s = stats[emp.id]
+            if (!s) return null
+            const workDays   = s.totalWork   // branch + visit days
+            const branchList = Object.entries(s.byBranch).sort((a, b) => b[1] - a[1])
+            const initials   = getEmpName(emp).charAt(0)
+
+            return (
+              <div key={emp.id} className="card overflow-hidden">
+                {/* Card header */}
+                <div className="px-4 pt-4 pb-3 flex items-center gap-3"
+                  style={{ borderBottom: '1px solid var(--border)' }}>
+                  {/* Avatar */}
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-black flex-shrink-0"
+                    style={{ background: 'linear-gradient(135deg,#6B21A8,#4C1D95)' }}>
+                    {initials}
+                  </div>
+
+                  {/* Name + code */}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-primary text-sm truncate">{getEmpName(emp)}</p>
+                    <p className="text-[10px] text-tertiary font-mono">{emp.employeeCode}</p>
+                  </div>
+
+                  {/* Summary pills */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+                    <span className="text-[11px] font-black px-2 py-1 rounded-lg"
+                      style={{ background: `${WE}18`, color: WE }}>
+                      {workDays} عمل
+                    </span>
+                    {s.totalAnnual > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-lg"
+                        style={{ background: 'rgba(245,158,11,0.15)', color: '#fbbf24' }}>
+                        {s.totalAnnual} سنوي
+                      </span>
+                    )}
+                    {s.totalSwap > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-lg"
+                        style={{ background: 'rgba(20,184,166,0.15)', color: '#5eead4' }}>
+                        ↔{s.totalSwap}
+                      </span>
+                    )}
+                    {s.totalSick > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-lg"
+                        style={{ background: 'rgba(239,68,68,0.15)', color: '#fca5a5' }}>
+                        {s.totalSick} مريض
+                      </span>
+                    )}
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-lg"
+                      style={{ background: 'rgba(75,85,99,0.18)', color: '#9ca3af' }}>
+                      {s.totalOff} راحة
+                    </span>
+                  </div>
+                </div>
+
+                {/* Branch breakdown */}
+                <div className="px-4 py-3 space-y-2.5">
+                  {branchList.length === 0 ? (
+                    <p className="text-xs text-tertiary text-center py-2">لا توجد أيام فروع مسجلة</p>
+                  ) : branchList.map(([brId, cnt]) => {
+                    const br    = branchMap[brId]
+                    const bCell = BRANCH_CELL[brId]
+                    const pct   = workDays > 0 ? Math.round(cnt / workDays * 100) : 0
+                    const name  = br?.storeNameAr || br?.storeName || brId
+                    const fg    = bCell?.fg ?? WE
+                    const bg    = bCell?.bg ?? `${WE}22`
+
+                    return (
+                      <div key={brId}>
+                        {/* Branch label row */}
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                            style={{ background: bg, color: fg }}>
+                            {name}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-black num" style={{ color: fg }}>
+                              {cnt} يوم
+                            </span>
+                            <span className="text-[11px] font-black num w-10 text-left" style={{ color: fg }}>
+                              {pct}%
+                            </span>
+                          </div>
+                        </div>
+                        {/* Progress bar */}
+                        <div className="h-1.5 rounded-full overflow-hidden"
+                          style={{ background: 'var(--bg-elevated)' }}>
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%`, background: fg, opacity: 0.85 }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 6-Day Branch Rule */}
+      {sixDayProposals.length > 0 && (
+        <div className="card overflow-hidden mb-6">
+          <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)', background: 'rgba(22,163,74,0.07)' }}>
+            <span className="text-base">📅</span>
+            <div className="flex-1">
+              <h3 className="text-xs font-black" style={{ color: '#86efac' }}>قانون فروع 6 أيام · تعويض الجمعة</h3>
+              <p className="text-[10px] text-tertiary mt-0.5">كل أسبوعين عمل في دلجا / بني أحمد / صفط الخمار = جمعة تعويضية</p>
+            </div>
+            <span className="text-xs font-black px-2 py-0.5 rounded-full" style={{ background: 'rgba(22,163,74,0.18)', color: '#86efac' }}>
+              {sixDayProposals.reduce((s, p) => s + p.compEarned, 0)} يوم مقترح
+            </span>
+          </div>
+          <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
+            {sixDayProposals.map(p => {
+              const emp       = empMap[p.employeeId]
+              const br        = branchMap[p.primaryBranch]
+              const bCell     = BRANCH_CELL[p.primaryBranch]
+              const monthLabel = new Date(p.month + '-01T00:00:00').toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })
+              return (
+                <div key={`${p.employeeId}-${p.month}`} className="px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
+                  {/* Employee + month */}
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs font-black"
+                      style={{ background: 'linear-gradient(135deg,#16A34A,#15803D)' }}>
+                      {emp ? getEmpName(emp).charAt(0) : '?'}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-primary text-sm truncate">{emp ? getEmpName(emp) : p.employeeId}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span className="text-[10px] text-tertiary">{monthLabel}</span>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                          style={{ background: bCell?.bg ?? 'rgba(22,163,74,0.18)', color: bCell?.fg ?? '#86efac' }}>
+                          {br?.storeNameAr || br?.storeName || p.primaryBranch}
+                        </span>
+                        <span className="text-[10px] text-secondary">{p.weeksWorked} أسابيع</span>
+                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+                          style={{ background: 'rgba(22,163,74,0.18)', color: '#86efac' }}>
+                          {p.compEarned} جمعة تعويضية
+                        </span>
+                        {p.weeksWorked >= 4 && (
+                          <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+                            style={{ background: 'rgba(234,179,8,0.20)', color: '#fde047' }}>
+                            ⭐ شهر كامل
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Proposed Fridays with add buttons */}
+                  <div className="flex flex-wrap gap-2">
+                    {p.fridays.map(fri => {
+                      const alreadyAdded = wdoSet.has(`${p.employeeId}|${fri}`)
+                      const friLabel = new Date(fri + 'T00:00:00').toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' })
+                      return (
+                        <div key={fri} className="flex items-center gap-1">
+                          {alreadyAdded ? (
+                            <span className="text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1"
+                              style={{ background: 'rgba(22,163,74,0.15)', color: '#86efac' }}>
+                              ✓ {friLabel}
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => addWDORecord({
+                                employeeId: p.employeeId,
+                                branchId:   p.primaryBranch,
+                                date:       fri,
+                                note:       `تعويض الجمعة - قانون 6 أيام (${monthLabel})`,
+                              })}
+                              className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all hover:opacity-90 flex items-center gap-1"
+                              style={{ background: 'rgba(22,163,74,0.12)', color: '#86efac', border: '1px dashed rgba(22,163,74,0.4)' }}>
+                              + {friLabel}
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Branch coverage table */}
+      <div className="card overflow-hidden">
+        <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
+          <BarChart2 size={14} style={{ color: WE }} />
+          <h3 className="text-xs font-black text-primary">تغطية الفروع</h3>
+        </div>
+        <div className="table-scroll">
+          <table className="we-table w-full">
+            <thead>
+              <tr>
+                <th className="text-right">الفرع</th>
+                <th className="text-center">أيام التغطية</th>
+                <th className="text-center">عدد الموظفين</th>
+                <th className="text-right">الموظفون</th>
+              </tr>
+            </thead>
+            <tbody>
+              {branches.map(br => {
+                const s = branchStats[br.id]
+                if (!s) return (
+                  <tr key={br.id}>
+                    <td><span className="font-semibold text-sm text-primary">{br.storeNameAr || br.storeName}</span></td>
+                    <td className="text-center"><span className="text-secondary text-sm">0</span></td>
+                    <td className="text-center"><span className="text-secondary text-sm">0</span></td>
+                    <td></td>
+                  </tr>
+                )
+                const bStyle = BRANCH_CELL[br.id]
+                return (
+                  <tr key={br.id}>
+                    <td>
+                      <span className="font-bold text-sm px-2 py-0.5 rounded-full"
+                        style={{ background: bStyle?.bg ?? `${WE}18`, color: bStyle?.fg ?? WE }}>
+                        {br.storeNameAr || br.storeName}
+                      </span>
+                    </td>
+                    <td className="text-center">
+                      <span className="font-black text-sm" style={{ color: bStyle?.fg ?? WE }}>{s.days}</span>
+                    </td>
+                    <td className="text-center">
+                      <span className="text-sm text-secondary">{s.employees.size}</span>
+                    </td>
+                    <td>
+                      <div className="flex flex-wrap gap-1">
+                        {[...s.employees].map(empId => {
+                          const emp = empMap[empId]
+                          return emp ? (
+                            <span key={empId} className="text-[10px] text-secondary px-1.5 py-0.5 rounded-md" style={{ background: 'var(--bg-elevated)' }}>
+                              {getEmpName(emp)}
+                            </span>
+                          ) : null
+                        })}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function SchedulePage() {
@@ -762,11 +1833,16 @@ export default function SchedulePage() {
 
 function SchedulePageInner({ region }: { region: Region }) {
   const { employees, branches, entries, alerts, addEntry, addEntries, updateEntry, deleteEntry, resetEntries, overwriteEntries } = useSchedule(region)
-  const { records: wdoRecords, addBulkRecords: addBulkWDORecords } = useWorkingDayOff()
-  const { ouChangeAlerts: _ouChangeAlerts } = useDataEngine() // retained, not rendered
+  const { records: couRecords, addRecord: addCOU, updateRecord: updateCOU, deleteRecord: deleteCOU } = useChangeOU(region)
+  const couDefaults = getCOUDefaults(region)
+  const { records: wdoRecords, addRecord: addWDORecord, addBulkRecords: addBulkWDORecords } = useWorkingDayOff()
+  const { ouChangeAlerts: allOUAlerts } = useDataEngine()
+  const today0 = new Date().toISOString().slice(0, 10)
+  const ouChangeAlerts = allOUAlerts.filter(a => a.date >= today0)
 
   const [year,  setYear]  = useState(() => new Date().getFullYear())
   const [month, setMonth] = useState(() => new Date().getMonth() + 1)
+  const [view,  setView]  = useState<'matrix' | 'list' | 'changeou' | 'analytics'>('matrix')
 
   // Entry modal
   const [modal,         setModal]         = useState(false)
@@ -774,6 +1850,11 @@ function SchedulePageInner({ region }: { region: Region }) {
   const [fixedEmployee, setFixedEmployee] = useState<string | null>(null)
   const [fixedDate,     setFixedDate]     = useState<string | null>(null)
   const [importModal,   setImportModal]   = useState(false)
+
+  // Change OU modal
+  const [couModal,   setCouModal]   = useState(false)
+  const [editingCOU, setEditingCOU] = useState<ChangeOURecord | null>(null)
+  const [couPreset,  setCouPreset]  = useState<Partial<ChangeOUInput> | undefined>(undefined)
 
   // Filters
   const [filterSearch, setFilterSearch] = useState('')
@@ -832,6 +1913,34 @@ function SchedulePageInner({ region }: { region: Region }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries]) // intentionally omit wdoRecords — only re-run when schedule changes
 
+  // ── 6-day branch pending comp days count (for analytics badge) ───────────
+  const pendingCompDaysCount = useMemo(() => {
+    const byEmpMonth: Record<string, Record<string, Set<string>>> = {}
+    for (const e of entries) {
+      if (!e.branchId || !SIX_DAY_BRANCHES.has(e.branchId)) continue
+      const ct = e.cellType ?? 'branch'
+      if (ct !== 'branch' && ct !== 'visit' && ct !== 'swap') continue
+      const mon = e.date.slice(0, 7)
+      const wk  = getISOWeekKey(e.date)
+      if (!byEmpMonth[e.employeeId]) byEmpMonth[e.employeeId] = {}
+      if (!byEmpMonth[e.employeeId][mon]) byEmpMonth[e.employeeId][mon] = new Set()
+      byEmpMonth[e.employeeId][mon].add(wk)
+    }
+    let total = 0
+    const wdoKeys = new Set(wdoRecords.map(r => `${r.employeeId}|${r.date}`))
+    for (const [empId, monthMap] of Object.entries(byEmpMonth)) {
+      for (const [mon, weeks] of Object.entries(monthMap)) {
+        const comp = Math.floor(weeks.size / 2)
+        if (comp === 0) continue
+        const [yr, mo] = mon.split('-').map(Number)
+        const fridays  = getFridaysInMonth(yr, mo).slice(0, comp)
+        const unAdded  = fridays.filter(f => !wdoKeys.has(`${empId}|${f}`)).length
+        total += unAdded
+      }
+    }
+    return total
+  }, [entries, wdoRecords])
+
   const monthEntries = useMemo(
     () => entries.filter(e => e.date.startsWith(`${year}-${String(month).padStart(2,'0')}`)),
     [entries, year, month],
@@ -862,6 +1971,20 @@ function SchedulePageInner({ region }: { region: Region }) {
     return true
   }), [days, filterFrom, filterTo])
 
+  // Filtered entries for list view
+  const filteredListEntries = useMemo(() => entries.filter(e => {
+    if (filterSearch.trim()) {
+      const emp = employees.find(x => x.id === e.employeeId)
+      if (!emp) return false
+      const q = filterSearch.toLowerCase()
+      if (!getEmpName(emp).toLowerCase().includes(q) && !emp.employeeCode.toLowerCase().includes(q) && !(emp.user||'').toLowerCase().includes(q)) return false
+    }
+    if (filterBranch && e.branchId !== filterBranch) return false
+    if (filterFrom && e.date < filterFrom) return false
+    if (filterTo   && e.date > filterTo)   return false
+    return true
+  }), [entries, employees, filterSearch, filterBranch, filterFrom, filterTo])
+
   function openAdd()                                 { setEditing(null); setFixedEmployee(null); setFixedDate(null); setModal(true) }
   function openAddFromCell(empId: string, date: string) { setEditing(null); setFixedEmployee(empId); setFixedDate(date); setModal(true) }
   function openEdit(e: ScheduleEntry)               { setEditing(e); setFixedEmployee(null); setFixedDate(null); setModal(true) }
@@ -870,8 +1993,34 @@ function SchedulePageInner({ region }: { region: Region }) {
   function handleSavePair(a: ScheduleInput, b: ScheduleInput) { addEntries([a, b]); closeModal() }
   function handleDelete()                           { if (!editing) return; if (window.confirm('حذف هذه الخلية؟')) { deleteEntry(editing.id); closeModal() } }
   function handleCellClick(empId: string, date: string, entry: ScheduleEntry | null) { if (entry) openEdit(entry); else openAddFromCell(empId, date) }
+  function handleDeleteFromList(id: string)         { if (window.confirm('حذف هذه المناوبة؟')) deleteEntry(id) }
   function prevMonth() { if (month===1){setMonth(12);setYear(y=>y-1)}else setMonth(m=>m-1) }
   function nextMonth() { if (month===12){setMonth(1);setYear(y=>y+1)}else setMonth(m=>m+1) }
+
+  function handleCOUSave(input: ChangeOUInput) { if (editingCOU) updateCOU(editingCOU.id, input); else addCOU(input); setCouModal(false); setEditingCOU(null); setCouPreset(undefined) }
+  function handleCOUDelete() { if (!editingCOU) return; if (window.confirm('حذف هذا السجل؟')) { deleteCOU(editingCOU.id); setCouModal(false); setEditingCOU(null); setCouPreset(undefined) } }
+  function openCOUFromAlert(preset: Partial<ChangeOUInput>) { setCouPreset(preset); setEditingCOU(null); setCouModal(true) }
+
+  // Convert auto-detected OUChangeAlert → COU form preset then open modal
+  function openCOUFromAutoAlert(a: OUChangeAlert) {
+    const emp    = employees.find(e => e.id === a.employeeId)
+    const fromBr = branches.find(b => b.id === a.fromBranchId)
+    const toBr   = branches.find(b => b.id === a.toBranchId)
+    const preset: Partial<ChangeOUInput> = {
+      userAccount:    emp?.domainName ?? emp?.user ?? '',
+      accountName:    a.employeeName,
+      email:          emp?.email ?? '',
+      mobile:         emp?.mobile ?? '',
+      idNumber:       emp?.nationalId ?? '',
+      employeeNumber: emp?.employeeCode ?? '',
+      oldOU:          a.fromBranch,
+      newOU:          a.toBranch,
+      oldOUCode:      fromBr?.ou ?? '',
+      newOUCode:      toBr?.ou ?? '',
+      note:           `تغيير تلقائي بتاريخ ${a.date}`,
+    }
+    setCouPreset(preset); setEditingCOU(null); setCouModal(true); setView('changeou')
+  }
 
   const monthLabel   = new Date(year, month - 1, 1).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })
   const todayDisplay = new Date().toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
@@ -922,45 +2071,119 @@ function SchedulePageInner({ region }: { region: Region }) {
         </div>
       </div>
 
+      <AlertBanner alerts={alerts} employees={employees} branches={branches} onGoToChangeOU={() => setView('changeou')} onCreateCOU={openCOUFromAlert} />
+
+      {/* 6-day branch comp info banner — shown once records are auto-added */}
+      {wdoRecords.filter(r => r.note.includes('قانون 6 أيام')).length > 0 && view !== 'analytics' && (
+        <button onClick={() => setView('analytics')}
+          className="w-full mb-4 flex items-center gap-3 px-4 py-3 rounded-xl text-right transition-all hover:opacity-90"
+          style={{ background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.22)' }}>
+          <span className="text-lg flex-shrink-0">📅</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-black" style={{ color: '#86efac' }}>
+              {wdoRecords.filter(r => r.note.includes('قانون 6 أيام')).length} جمعة تعويضية أُضيفت تلقائياً في «عمل يوم الإجازة» · قانون فروع 6 أيام
+            </p>
+            <p className="text-[10px] text-tertiary mt-0.5">اضغط لرؤية التفاصيل في التحليلات</p>
+          </div>
+          <span className="text-xs font-bold flex-shrink-0" style={{ color: '#86efac' }}>التحليلات ←</span>
+        </button>
+      )}
+
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        {/* Month nav */}
-        <div className="flex items-center gap-2">
-          <button onClick={prevMonth} className="p-1.5 rounded-lg text-secondary hover:text-primary hover:bg-elevated transition-colors"><ChevronRight size={16} /></button>
-          <button onClick={() => { setYear(new Date().getFullYear()); setMonth(new Date().getMonth()+1) }}
-            className="px-3 py-1 rounded-lg text-xs font-semibold hover:bg-elevated transition-colors" style={{ color: 'var(--text-secondary)' }}>
-            هذا الشهر
-          </button>
-          <span className="text-sm font-black text-primary">{monthLabel}</span>
-          <button onClick={nextMonth} className="p-1.5 rounded-lg text-secondary hover:text-primary hover:bg-elevated transition-colors"><ChevronLeft size={16} /></button>
+        {/* Tabs */}
+        <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
+          {([['matrix','مصفوفة'],['list','قائمة'],['analytics','تحليلات'],['changeou','تغيير OU']] as const).map(([v, label]) => (
+            <button key={v} onClick={() => setView(v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+              style={view === v ? { background: WE, color: '#fff' } : { color: 'var(--text-secondary)' }}>
+              {v === 'changeou' && <Repeat2 size={11} />}
+              {v === 'analytics' && <BarChart2 size={11} />}
+              {label}
+              {v === 'changeou' && (ouChangeAlerts.length > 0 || couRecords.length > 0) && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-black"
+                  style={{
+                    background: view === 'changeou' ? 'rgba(255,255,255,0.2)' : '#F59E0B20',
+                    color: view === 'changeou' ? '#fff' : '#F59E0B',
+                  }}>
+                  {ouChangeAlerts.length + couRecords.length}
+                </span>
+              )}
+              {v === 'analytics' && pendingCompDaysCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-black"
+                  style={{
+                    background: view === 'analytics' ? 'rgba(255,255,255,0.2)' : 'rgba(22,163,74,0.25)',
+                    color: view === 'analytics' ? '#fff' : '#86efac',
+                  }}>
+                  {pendingCompDaysCount} جمعة
+                </span>
+              )}
+            </button>
+          ))}
         </div>
+
+        {/* Month nav (matrix / list) */}
+        {view !== 'changeou' && view !== 'analytics' && (
+          <div className="flex items-center gap-2">
+            <button onClick={prevMonth} className="p-1.5 rounded-lg text-secondary hover:text-primary hover:bg-elevated transition-colors"><ChevronRight size={16} /></button>
+            <button onClick={() => { setYear(new Date().getFullYear()); setMonth(new Date().getMonth()+1) }}
+              className="px-3 py-1 rounded-lg text-xs font-semibold hover:bg-elevated transition-colors" style={{ color: 'var(--text-secondary)' }}>
+              هذا الشهر
+            </button>
+            <span className="text-sm font-black text-primary">{monthLabel}</span>
+            <button onClick={nextMonth} className="p-1.5 rounded-lg text-secondary hover:text-primary hover:bg-elevated transition-colors"><ChevronLeft size={16} /></button>
+          </div>
+        )}
       </div>
 
       {/* Filter bar */}
-      <FilterBar
-        search={filterSearch} branch={filterBranch} dateFrom={filterFrom} dateTo={filterTo}
-        branches={branches}
-        onSearch={setFilterSearch} onBranch={setFilterBranch}
-        onDateFrom={setFilterFrom} onDateTo={setFilterTo}
-        onClear={() => { setFilterSearch(''); setFilterBranch(''); setFilterFrom(''); setFilterTo('') }}
-      />
+      {view !== 'changeou' && view !== 'analytics' && (
+        <FilterBar
+          search={filterSearch} branch={filterBranch} dateFrom={filterFrom} dateTo={filterTo}
+          branches={branches}
+          onSearch={setFilterSearch} onBranch={setFilterBranch}
+          onDateFrom={setFilterFrom} onDateTo={setFilterTo}
+          onClear={() => { setFilterSearch(''); setFilterBranch(''); setFilterFrom(''); setFilterTo('') }}
+        />
+      )}
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-1.5 mb-4">
-        {LEGEND.map(l => (
-          <span key={l.label} className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: l.bg, color: l.fg }}>
-            {l.label}
-          </span>
-        ))}
-      </div>
+      {/* Legend (matrix) */}
+      {view === 'matrix' && (
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          {LEGEND.map(l => (
+            <span key={l.label} className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: l.bg, color: l.fg }}>
+              {l.label}
+            </span>
+          ))}
+        </div>
+      )}
 
-      {/* Main content — matrix always */}
-      <div className="card overflow-hidden">
-        <MatrixGrid days={filteredDays} employees={filteredEmployees} branches={branches} entries={monthEntries} onCellClick={handleCellClick} />
-      </div>
+      {/* Main content */}
+      {view === 'changeou' ? (
+        <ChangeOUView
+          records={couRecords}
+          autoAlerts={ouChangeAlerts}
+          employees={employees}
+          branches={branches}
+          couDefaults={couDefaults}
+          onAdd={() => { setEditingCOU(null); setCouModal(true) }}
+          onEdit={r => { setEditingCOU(r); setCouModal(true) }}
+          onDelete={id => { if (window.confirm('حذف هذا السجل؟')) deleteCOU(id) }}
+          onDocument={openCOUFromAutoAlert}
+        />
+      ) : view === 'analytics' ? (
+        <AnalyticsView entries={entries} employees={employees} branches={branches} wdoRecords={wdoRecords} addWDORecord={addWDORecord} />
+      ) : (
+        <div className="card overflow-hidden">
+          {view === 'matrix'
+            ? <MatrixGrid days={filteredDays} employees={filteredEmployees} branches={branches} entries={monthEntries} onCellClick={handleCellClick} />
+            : <ListView   entries={filteredListEntries} employees={employees} branches={branches} onEdit={openEdit} onDelete={handleDeleteFromList} />
+          }
+        </div>
+      )}
 
       {/* Reset */}
-      {entries.length > 0 && (
+      {entries.length > 0 && view !== 'changeou' && view !== 'analytics' && (
         <div className="mt-4 flex justify-end">
           <button onClick={() => { if (window.confirm('سيتم حذف كل الجدول. هل أنت متأكد؟')) resetEntries() }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors hover:bg-red-500/10"
@@ -982,6 +2205,17 @@ function SchedulePageInner({ region }: { region: Region }) {
       {importModal && (
         <ImportModal employees={employees} onClose={() => setImportModal(false)}
           onApply={(ents, dates) => overwriteEntries(ents, dates)} />
+      )}
+
+      {/* Change OU modal */}
+      {couModal && (
+        <ChangeOUModal
+          editing={editingCOU} branches={branches} employees={employees} preset={couPreset}
+          couDefaults={couDefaults}
+          onClose={() => { setCouModal(false); setEditingCOU(null); setCouPreset(undefined) }}
+          onSave={handleCOUSave}
+          onDelete={editingCOU ? handleCOUDelete : undefined}
+        />
       )}
     </div>
   )
