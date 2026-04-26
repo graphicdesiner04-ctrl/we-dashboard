@@ -200,3 +200,56 @@ body {
 
 /* ── Table scroll wrapper ── */
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ── Mobile improvements ── */
+
+/* Prevent tap highlight flicker on touch devices */
+button, a { -webkit-tap-highlight-color: transparent; }
+
+/* Bottom nav safe area (iOS notch support) */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+/* Better touch targets on mobile — min 44px height */
+@media (max-width: 768px) {
+  .we-input {
+    font-size: 16px;     /* prevents iOS zoom on focus */
+    min-height: 44px;
+  }
+
+  /* Stack KPI cards in 2 cols on mobile (override any grid-cols-1) */
+  .mobile-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.625rem;
+  }
+
+  /* Full-width form sections on mobile */
+  .we-form-section {
+    padding: 1rem;
+    border-radius: 0.75rem;
+  }
+
+  .card {
+    border-radius: 0.75rem;
+  }
+
+  /* Make table cells slightly more compact on mobile */
+  .we-table td, .we-table th {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  /* Prevent horizontal overflow on page */
+  body { overflow-x: hidden; }
+}
+
+/* ── Smooth page transitions ── */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter {
+  animation: slideUp 0.22s ease forwards;
+}

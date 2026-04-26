@@ -290,16 +290,27 @@ export function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => 
   if (!open) return null
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 z-40 md:hidden" onClick={onClose} />
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/70 z-40 md:hidden backdrop-blur-sm"
+        onClick={onClose}
+        style={{ animation: 'fadeIn 0.15s ease' }}
+      />
       <aside
-        className="fixed top-0 left-0 h-full w-[260px] flex flex-col z-50 md:hidden overflow-hidden"
+        className="fixed top-0 left-0 h-full w-[272px] flex flex-col z-50 md:hidden overflow-hidden"
         style={{
           background: '#070F20',
           borderRight: '1px solid rgba(255,255,255,0.07)',
+          animation: 'slideInLeft 0.2s ease',
         }}
       >
         <SidebarContent onClose={onClose} />
       </aside>
+
+      <style>{`
+        @keyframes fadeIn    { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes slideInLeft { from { transform: translateX(-100%) } to { transform: translateX(0) } }
+      `}</style>
     </>
   )
 }

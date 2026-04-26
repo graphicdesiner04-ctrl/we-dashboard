@@ -81,39 +81,39 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
 
   return (
     <header
-      className="h-14 flex items-center gap-3 px-4 sticky top-0 z-30 flex-shrink-0"
+      className="h-14 flex items-center gap-2 px-3 md:px-4 sticky top-0 z-30 flex-shrink-0"
       style={{
         background: 'var(--bg-surface)',
         borderBottom: '1px solid var(--border)',
         direction: dir,
       }}
     >
-      {/* Mobile hamburger */}
+      {/* Mobile hamburger — hidden since bottom nav exists, but kept for drawer access on tablet */}
       <button
         onClick={onMenuClick}
-        className="md:hidden p-2 rounded-lg text-secondary hover:text-primary hover:bg-elevated transition-colors"
+        className="md:hidden p-2 rounded-lg text-secondary hover:text-primary hover:bg-elevated transition-colors flex-shrink-0"
         aria-label="القائمة"
       >
         <Menu size={19} />
       </button>
 
       {/* Page title */}
-      <h1 className="text-sm font-bold text-primary truncate">{title}</h1>
+      <h1 className="text-sm font-bold text-primary truncate flex-1 md:flex-none">{title}</h1>
 
-      <div className="flex-1" />
+      <div className="hidden md:block flex-1" />
 
-      {/* Current month pill */}
+      {/* Current month pill — desktop only */}
       <div
-        className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+        className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
         style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
       >
         <Calendar size={12} className="text-tertiary" />
         <span>{arabicMonth()}</span>
       </div>
 
-      {/* Region toggle */}
+      {/* Region toggle — always visible, compact on mobile */}
       <div
-        className="flex items-center rounded-xl overflow-hidden text-xs font-black border"
+        className="flex items-center rounded-xl overflow-hidden text-xs font-black border flex-shrink-0"
         style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}
         title={region === 'south' ? 'التبديل إلى شمال المنيا' : 'التبديل إلى جنوب المنيا'}
       >
@@ -135,7 +135,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
         >شمال</button>
       </div>
 
-      {/* Language toggle */}
+      {/* Language toggle — desktop */}
       <button
         onClick={toggleLang}
         className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-black transition-colors hover:bg-elevated"
@@ -150,17 +150,17 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
       {/* Theme toggle */}
       <button
         onClick={toggleTheme}
-        className="p-2 rounded-lg text-secondary hover:text-primary hover:bg-elevated transition-colors"
+        className="p-2 rounded-lg text-secondary hover:text-primary hover:bg-elevated transition-colors flex-shrink-0"
         title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
       >
         {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
       </button>
 
-      {/* Divider */}
-      <div className="hidden sm:block w-px h-5" style={{ background: 'var(--border-strong)' }} />
+      {/* Divider — desktop */}
+      <div className="hidden sm:block w-px h-5 flex-shrink-0" style={{ background: 'var(--border-strong)' }} />
 
       {/* User info */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2 flex-shrink-0">
         <div className="hidden sm:block text-right leading-tight">
           <p className="text-xs font-bold text-primary">{name}</p>
           {roleStr && <p className="text-[10px] text-tertiary">{roleStr}</p>}
@@ -175,7 +175,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
           {initial}
         </div>
 
-        {/* Logout (desktop only) */}
+        {/* Logout — desktop only */}
         <button
           onClick={handleLogout}
           className="hidden sm:flex p-2 rounded-lg text-secondary hover:text-red-500 hover:bg-elevated transition-colors"

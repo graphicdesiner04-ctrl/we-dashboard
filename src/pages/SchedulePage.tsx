@@ -742,12 +742,13 @@ function FilterBar({ search, branch, dateFrom, dateTo, branches, onSearch, onBra
 
 // ── Matrix grid ───────────────────────────────────────────────────────────
 
-function MatrixGrid({ days, employees, branches, entries, onCellClick }: {
-  days:        string[]
-  employees:   ReturnType<typeof useSchedule>['employees']
-  branches:    ReturnType<typeof useSchedule>['branches']
-  entries:     ScheduleEntry[]
-  onCellClick: (empId: string, date: string, entry: ScheduleEntry | null) => void
+function MatrixGrid({ days, employees, branches, entries, filterBranch, onCellClick }: {
+  days:          string[]
+  employees:     ReturnType<typeof useSchedule>['employees']
+  branches:      ReturnType<typeof useSchedule>['branches']
+  entries:       ScheduleEntry[]
+  filterBranch?: string
+  onCellClick:   (empId: string, date: string, entry: ScheduleEntry | null) => void
 }) {
   const branchMap = useMemo(() => Object.fromEntries(branches.map(b => [b.id, b])), [branches])
   const empMap   = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees])
@@ -803,7 +804,9 @@ function MatrixGrid({ days, employees, branches, entries, onCellClick }: {
                     title={entryIndex[`${emp.id}|${date}`]?.branchId ? branchMap[entryIndex[`${emp.id}|${date}`]!.branchId!]?.storeName : undefined}
                     style={{ width: COL_W, minWidth: COL_W, maxWidth: COL_W, height: ROW_H, borderBottom: `1px solid ${borderClr}`, borderRight: `1px solid ${borderClr}`, padding: 3, cursor: 'pointer', background: isWknd && !entryIndex[`${emp.id}|${date}`] ? 'rgba(255,204,0,0.04)' : undefined }}>
                     {(() => {
-                      const entry = entryIndex[`${emp.id}|${date}`] ?? null
+                      const rawEntry = entryIndex[`${emp.id}|${date}`] ?? null
+                      // When a branch filter is active, hide cells that belong to other branches
+                      const entry = (filterBranch && rawEntry?.branchId && rawEntry.branchId !== filterBranch) ? null : rawEntry
                       const branch = entry?.branchId ? branchMap[entry.branchId] : undefined
                       let cs = entry ? cellStyle(entry, branch?.storeNameAr || branch?.storeName) : { bg: 'transparent', fg: '#4b5563', label: '', sub: undefined }
                       // For swap: show partner's first name as sub-label
@@ -2181,7 +2184,7 @@ function SchedulePageInner({ region }: { region: Region }) {
       ) : (
         <div className="card overflow-hidden">
           {view === 'matrix'
-            ? <MatrixGrid days={filteredDays} employees={filteredEmployees} branches={branches} entries={monthEntries} onCellClick={handleCellClick} />
+            ? <MatrixGrid days={filteredDays} employees={filteredEmployees} branches={branches} entries={monthEntries} filterBranch={filterBranch || undefined} onCellClick={handleCellClick} />
             : <ListView   entries={filteredListEntries} employees={employees} branches={branches} onEdit={openEdit} onDelete={handleDeleteFromList} />
           }
         </div>
