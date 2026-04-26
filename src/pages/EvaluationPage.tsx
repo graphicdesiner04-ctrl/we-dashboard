@@ -5,6 +5,8 @@ import {
 } from 'lucide-react'
 import { useEvaluation } from '@/hooks/useEvaluation'
 import { useLanguage }   from '@/context/LanguageContext'
+import { useAuth }        from '@/context/AuthContext'
+import { filterByViewRole } from '@/lib/roleFilter'
 import { getEmpName }    from '@/data/seedData'
 import type { EvaluationRecord, EvaluationInput } from '@/hooks/useEvaluation'
 import type { Employee, Branch } from '@/types/hr'
@@ -405,6 +407,30 @@ export default function EvaluationPage() {
     addRecord, updateRecord, deleteRecord,
   } = useEvaluation()
 
+  const { session } = useAuth()
+  const visEmps  = useMemo(() => filterByViewRole(employees, session?.role), [employees, session?.role])
+  const visIds   = useMemo(() => new Set(visEmps.map(e => e.id)), [visEmps])
+  const visRecords = useMemo(() => records.filter(r => visIds.has(r.employeeId)), [records, visIds])
+  const visKpi   = useMemo(() => {
+    const yr = visRecords.filter(r => r.date.startsWith(String(new Date().getFullYear())))
+    const totalPositiveDeg = yr.filter(r => r.score > 0).reduce((s, r) => s + r.score, 0)
+    const totalNegativeDeg = yr.filter(r => r.score < 0).reduce((s, r) => s + Math.abs(r.score), 0)
+    const cm = new Date().toISOString().slice(0, 7)
+    const mRecs = yr.filter(r => r.date.startsWith(cm))
+    const monthPositiveDeg = mRecs.filter(r => r.score > 0).reduce((s, r) => s + r.score, 0)
+    const monthNegativeDeg = mRecs.filter(r => r.score < 0).reduce((s, r) => s + Math.abs(r.score), 0)
+    return {
+      ...kpi,
+      totalRecords:    yr.length,
+      uniqueEmployees: new Set(yr.map(r => r.employeeId)).size,
+      totalPositiveDeg,
+      totalNegativeDeg,
+      monthPositiveDeg,
+      monthNegativeDeg,
+      monthNet: monthPositiveDeg - monthNegativeDeg,
+    }
+  }, [visRecords, kpi])
+
   const [editing, setEditing] = useState<EvaluationRecord | null>(null)
 
   function handleSubmit(data: EvaluationInput) {
@@ -416,18 +442,18 @@ export default function EvaluationPage() {
     if (window.confirm('هل تريد حذف هذا التقييم؟')) deleteRecord(id)
   }
 
-  // Build monthly breakdown — all employees, all months
+  // Build monthly breakdown — visible employees only
   const currentMonth = new Date().toISOString().slice(0, 7)
 
   const monthlyData = useMemo((): MonthData[] => {
-    const monthSet = new Set(records.map(r => r.date.slice(0, 7)))
+    const monthSet = new Set(visRecords.map(r => r.date.slice(0, 7)))
     monthSet.add(currentMonth)
     const months = [...monthSet].sort((a, b) => b.localeCompare(a)) // newest first
 
     return months.map(month => {
-      const monthRecs = records.filter(r => r.date.startsWith(month))
+      const monthRecs = visRecords.filter(r => r.date.startsWith(month))
 
-      const empStats: EmpStat[] = employees.map(emp => {
+      const empStats: EmpStat[] = visEmps.map(emp => {
         const recs = monthRecs.filter(r => r.employeeId === emp.id)
         const pos  = recs.filter(r => r.score > 0).reduce((s, r) => s + r.score, 0)
         const neg  = recs.filter(r => r.score < 0).reduce((s, r) => s + Math.abs(r.score), 0)
@@ -450,7 +476,7 @@ export default function EvaluationPage() {
 
       return { month, empStats, totalPos, totalNeg, totalNet, evaluated }
     })
-  }, [records, employees, currentMonth])
+  }, [visRecords, visEmps, currentMonth])
 
   const year = new Date().getFullYear()
 
@@ -473,11 +499,11 @@ export default function EvaluationPage() {
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white flex-shrink-0"
           style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
           <Star size={12} />
-          <span>{records.length} تقييم</span>
+          <span>{visRecords.length} تقييم</span>
         </div>
       </div>
 
-      <KPIBar kpi={kpi} />
+      <KPIBar kpi={visKpi} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] gap-5">
 
@@ -485,7 +511,7 @@ export default function EvaluationPage() {
         <div className="lg:self-start lg:sticky lg:top-[72px]">
           <EvalForm
             key={editing?.id ?? 'new'}
-            employees={employees}
+            employees={visEmps}
             branches={branches}
             editing={editing}
             onSubmit={handleSubmit}
@@ -497,7 +523,7 @@ export default function EvaluationPage() {
         <div className="min-w-0 space-y-3">
           <div className="flex items-center gap-2 mb-1">
             <h2 className="text-sm font-bold text-primary">التقييمات الشهرية</h2>
-            <span className="text-xs text-tertiary">— كل الموظفين · {employees.length} موظف</span>
+            <span className="text-xs text-tertiary">— كل الموظفين · {visEmps.length} موظف</span>
           </div>
 
           {monthlyData.map(data => (

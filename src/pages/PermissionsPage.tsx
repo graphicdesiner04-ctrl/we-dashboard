@@ -3,6 +3,8 @@ import { Clock, Search, Pencil, Trash2, ChevronDown, ChevronUp, HardDrive, Rotat
 import PermissionKPICards from '@/components/hr/PermissionKPICards'
 import PermissionForm     from '@/components/hr/PermissionForm'
 import { usePermissions } from '@/hooks/usePermissions'
+import { useAuth }        from '@/context/AuthContext'
+import { filterByViewRole } from '@/lib/roleFilter'
 import { getEmpName }     from '@/data/seedData'
 import type { PermissionRecord, Branch } from '@/types/hr'
 import type { PermissionInput } from '@/hooks/usePermissions'
@@ -254,10 +256,31 @@ function MonthSection({
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function PermissionsPage() {
+  const { session } = useAuth()
   const {
     employees, branches, records, currentMonthRecords,
     summaries, kpi, addRecord, updateRecord, deleteRecord, resetRecords,
   } = usePermissions()
+
+  // Role-based visibility filter
+  const visEmps = useMemo(
+    () => filterByViewRole(employees, session?.role),
+    [employees, session?.role],
+  )
+  const visIds = useMemo(() => new Set(visEmps.map(e => e.id)), [visEmps])
+  const visRecords             = useMemo(() => records.filter(r => visIds.has(r.employeeId)), [records, visIds])
+  const visCurrentMonthRecords = useMemo(() => currentMonthRecords.filter(r => visIds.has(r.employeeId)), [currentMonthRecords, visIds])
+  const visSummaries           = useMemo(() => summaries.filter(s => visIds.has(s.employee.id)), [summaries, visIds])
+  const visKpi = useMemo(() => {
+    const totalUsed = Math.round(visSummaries.reduce((s, e) => s + e.totalDecimalHours, 0) * 100) / 100
+    return {
+      ...kpi,
+      totalEmployees:     visEmps.length,
+      totalUsedHours:     totalUsed,
+      totalRemainingHours: Math.max(0, visEmps.length * 4 - totalUsed),
+      employeesOverLimit:  visSummaries.filter(s => s.isOverLimit).length,
+    }
+  }, [visSummaries, visEmps, kpi])
 
   const [editing, setEditing] = useState<PermissionRecord | null>(null)
   const [search,  setSearch]  = useState('')
@@ -282,10 +305,10 @@ export default function PermissionsPage() {
     }
   }
 
-  // Group ALL records by month, newest first
+  // Group visible records by month, newest first
   const monthBuckets = useMemo(() => {
     const map = new Map<string, PermissionRecord[]>()
-    for (const rec of records) {
+    for (const rec of visRecords) {
       const key = rec.date.slice(0, 7)
       const arr = map.get(key) ?? []
       arr.push(rec)
@@ -318,14 +341,14 @@ export default function PermissionsPage() {
         </div>
       </div>
 
-      <PermissionKPICards kpi={kpi} />
+      <PermissionKPICards kpi={visKpi} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
 
         {/* Left: form + utils */}
         <div className="flex flex-col gap-4 lg:self-start lg:sticky lg:top-[72px]">
           <PermissionForm
-            employees={employees} branches={branches} summaries={summaries}
+            employees={visEmps} branches={branches} summaries={visSummaries}
             editingRecord={editing} onSubmit={handleSubmit}
             onCancelEdit={() => setEditing(null)} onEmployeeSelect={() => {}}
           />
@@ -338,7 +361,7 @@ export default function PermissionsPage() {
 
           <div className="card p-3 flex flex-col gap-2">
             <p className="text-[10px] font-bold uppercase tracking-widest text-tertiary mb-1">إعادة التعيين</p>
-            <button onClick={handleReset} disabled={records.length === 0}
+            <button onClick={handleReset} disabled={visRecords.length === 0}
               className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors hover:bg-red-500/10 disabled:opacity-30 disabled:cursor-not-allowed"
               style={{ color: '#DC2626' }}>
               <Trash2 size={13} /><span>حذف سجلات الأذونات</span>
@@ -371,11 +394,11 @@ export default function PermissionsPage() {
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                 style={{ background: `${WE}15`, color: WE }}>
-                {records.length} سجل إجمالي
+                {visRecords.length} سجل إجمالي
               </span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                 style={{ background: 'rgba(16,185,129,0.12)', color: '#10B981' }}>
-                {currentMonthRecords.length} هذا الشهر
+                {visCurrentMonthRecords.length} هذا الشهر
               </span>
             </div>
           </div>

@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { HeartPulse, Plus, Save, X, Trash2, Pencil, AlertCircle } from 'lucide-react'
 import { useSickLeave } from '@/hooks/useSickLeave'
+import { useAuth }       from '@/context/AuthContext'
+import { filterByViewRole } from '@/lib/roleFilter'
 import { getEmpName }   from '@/data/seedData'
 import type { SickLeaveRecord } from '@/types/hr'
 import type { SickLeaveInput }  from '@/hooks/useSickLeave'
@@ -267,8 +269,18 @@ function SickLeaveTable({
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export default function SickLeavePage() {
-  const { employees, branches, records, kpi, addRecord, updateRecord, deleteRecord, resetRecords, daysBetween } =
+  const { employees, branches, records, addRecord, updateRecord, deleteRecord, resetRecords, daysBetween } =
     useSickLeave()
+
+  const { session } = useAuth()
+  const visEmps    = useMemo(() => filterByViewRole(employees, session?.role), [employees, session?.role])
+  const visIds     = useMemo(() => new Set(visEmps.map(e => e.id)), [visEmps])
+  const visRecords = useMemo(() => records.filter(r => visIds.has(r.employeeId)), [records, visIds])
+  const visKpi     = useMemo(() => ({
+    totalEmployees: visEmps.length,
+    totalDaysUsed:  Math.round(visRecords.reduce((s, r) => s + r.days, 0) * 100) / 100,
+    employeesUsed:  new Set(visRecords.map(r => r.employeeId)).size,
+  }), [visEmps, visRecords])
 
   const [editing, setEditing] = useState<SickLeaveRecord | null>(null)
 
@@ -299,20 +311,20 @@ export default function SickLeavePage() {
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white flex-shrink-0"
           style={{ background: `linear-gradient(135deg,${WE},#4C1D95)` }}>
           <HeartPulse size={12} />
-          <span>{records.length} سجل</span>
+          <span>{visRecords.length} سجل</span>
         </div>
       </div>
 
-      <KPICards kpi={kpi} />
+      <KPICards kpi={visKpi} />
 
       <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
         <div className="flex flex-col gap-4 lg:self-start lg:sticky lg:top-[72px]">
           <SickLeaveForm
-            employees={employees} branches={branches}
+            employees={visEmps} branches={branches}
             editing={editing} onSubmit={handleSubmit}
             onCancel={() => setEditing(null)} daysBetween={daysBetween}
           />
-          {records.length > 0 && (
+          {visRecords.length > 0 && (
             <div className="card p-3">
               <p className="text-[10px] font-bold uppercase tracking-widest text-tertiary mb-2">إعادة التعيين</p>
               <button
@@ -328,10 +340,10 @@ export default function SickLeavePage() {
         <div className="min-w-0">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-bold text-primary">سجلات الإجازة المرضية</h2>
-            <span className="text-xs text-tertiary">{records.length} سجل إجمالي</span>
+            <span className="text-xs text-tertiary">{visRecords.length} سجل إجمالي</span>
           </div>
           <SickLeaveTable
-            records={records} employees={employees} branches={branches}
+            records={visRecords} employees={visEmps} branches={branches}
             onEdit={r => { setEditing(r); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
             onDelete={handleDelete}
           />

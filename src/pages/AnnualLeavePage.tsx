@@ -5,6 +5,8 @@ import AnnualLeaveForm     from '@/components/hr/AnnualLeaveForm'
 import { useAnnualLeave }  from '@/hooks/useAnnualLeave'
 import { useSchedule }     from '@/hooks/useSchedule'
 import { useRegion }       from '@/context/RegionContext'
+import { useAuth }         from '@/context/AuthContext'
+import { filterByViewRole } from '@/lib/roleFilter'
 import { getLeaves }       from '@/core/dataEngine'
 import { getEmpName }      from '@/data/seedData'
 import { ANNUAL_LEAVE_DAYS } from '@/types/hr'
@@ -219,10 +221,26 @@ export default function AnnualLeavePage() {
     summaries, kpi, addRecord, updateRecord, deleteRecord, resetRecords,
   } = useAnnualLeave()
 
+  const { session } = useAuth()
+  const visEmps            = useMemo(() => filterByViewRole(employees, session?.role), [employees, session?.role])
+  const visIds             = useMemo(() => new Set(visEmps.map(e => e.id)), [visEmps])
+  const visRecords         = useMemo(() => records.filter(r => visIds.has(r.employeeId)), [records, visIds])
+  const visCurrentYearRecs = useMemo(() => currentYearRecords.filter(r => visIds.has(r.employeeId)), [currentYearRecords, visIds])
+  const visSummaries       = useMemo(() => summaries.filter(s => visIds.has(s.employee.id)), [summaries, visIds])
+  const visKpi             = useMemo(() => {
+    const totalUsed = Math.round(visSummaries.reduce((s, e) => s + e.totalDaysUsed, 0) * 100) / 100
+    return {
+      ...kpi,
+      totalEmployees: visEmps.length,
+      totalDaysUsed:  totalUsed,
+      employeesOverLimit: visSummaries.filter(s => s.isOverLimit).length,
+    }
+  }, [visSummaries, visEmps, kpi])
+
   // Schedule-sourced annual leaves (single source of truth — region-aware)
   const { region } = useRegion()
   const { entries } = useSchedule(region)
-  const scheduleLeaves = useMemo(() => getLeaves('annual', entries, employees), [entries, employees])
+  const scheduleLeaves = useMemo(() => getLeaves('annual', entries, visEmps), [entries, visEmps])
 
   // Group schedule leaves by employee
   const scheduleByEmployee = useMemo(() => {
@@ -272,27 +290,27 @@ export default function AnnualLeavePage() {
 
   const year = new Date().getFullYear()
 
-  // Per-employee records map (current year only)
+  // Per-employee records map (current year only, visible employees only)
   const empRecords = useMemo(() => {
     const map: Record<string, AnnualLeaveRecord[]> = {}
-    for (const emp of employees) {
-      map[emp.id] = currentYearRecords.filter(r => r.employeeId === emp.id)
+    for (const emp of visEmps) {
+      map[emp.id] = visCurrentYearRecs.filter(r => r.employeeId === emp.id)
     }
     return map
-  }, [employees, currentYearRecords])
+  }, [visEmps, visCurrentYearRecs])
 
   // Filter + sort
   const sorted = useMemo(() => {
     const q = search.trim().toLowerCase()
     const filtered = q
-      ? summaries.filter(s => getEmpName(s.employee).toLowerCase().includes(q))
-      : summaries
+      ? visSummaries.filter(s => getEmpName(s.employee).toLowerCase().includes(q))
+      : visSummaries
     return [...filtered].sort((a, b) => {
       const ar = empRecords[a.employee.id]?.length ?? 0
       const br = empRecords[b.employee.id]?.length ?? 0
       return br - ar
     })
-  }, [summaries, search, empRecords])
+  }, [visSummaries, search, empRecords])
 
   return (
     <div style={{ direction: 'rtl' }}>
@@ -338,7 +356,7 @@ export default function AnnualLeavePage() {
             style={activeTab === 'manual'
               ? { background: 'rgba(255,255,255,0.25)' }
               : { background: `${WE}20`, color: WE }}>
-            {records.length}
+            {visRecords.length}
           </span>
         </button>
       </div>
@@ -406,11 +424,11 @@ export default function AnnualLeavePage() {
       {/* ── MANUAL TAB (legacy manual records) ── */}
       {activeTab === 'manual' && (
         <>
-          <AnnualLeaveKPICards kpi={kpi} />
+          <AnnualLeaveKPICards kpi={visKpi} />
           <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-5">
             <div className="flex flex-col gap-4 lg:self-start lg:sticky lg:top-[72px]">
               <AnnualLeaveForm
-                employees={employees} branches={branches} summaries={summaries}
+                employees={visEmps} branches={branches} summaries={visSummaries}
                 editingRecord={editing} onSubmit={handleSubmit}
                 onCancelEdit={() => setEditing(null)} onEmployeeSelect={() => {}}
               />
@@ -421,7 +439,7 @@ export default function AnnualLeavePage() {
               </div>
               <div className="card p-3 flex flex-col gap-2">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-tertiary mb-1">إعادة التعيين</p>
-                <button onClick={handleReset} disabled={records.length === 0}
+                <button onClick={handleReset} disabled={visRecords.length === 0}
                   className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors hover:bg-red-500/10 disabled:opacity-30 disabled:cursor-not-allowed"
                   style={{ color: '#DC2626' }}>
                   <Trash2 size={13} /><span>حذف سجلات الإجازة</span>

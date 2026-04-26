@@ -1837,8 +1837,13 @@ function SchedulePageInner({ region }: { region: Region }) {
   const couDefaults = getCOUDefaults(region)
   const { records: wdoRecords, addRecord: addWDORecord, addBulkRecords: addBulkWDORecords } = useWorkingDayOff()
   const { ouChangeAlerts: allOUAlerts } = useDataEngine()
-  const today0 = new Date().toISOString().slice(0, 10)
-  const ouChangeAlerts = allOUAlerts.filter(a => a.date >= today0)
+  const today0   = new Date().toISOString().slice(0, 10)
+  // Only show alerts for employees that belong to the current region
+  const regionEmpIds = useMemo(() => new Set(employees.map(e => e.id)), [employees])
+  const ouChangeAlerts = useMemo(
+    () => allOUAlerts.filter(a => a.date >= today0 && regionEmpIds.has(a.employeeId)),
+    [allOUAlerts, today0, regionEmpIds],
+  )
 
   const [year,  setYear]  = useState(() => new Date().getFullYear())
   const [month, setMonth] = useState(() => new Date().getMonth() + 1)
