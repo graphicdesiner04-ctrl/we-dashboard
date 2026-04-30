@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Clock, Calendar, HeartPulse,
   Repeat2, CalendarOff, Upload, Server,
-  Users, GitBranch, CalendarDays, Star,
+  Users, GitBranch, CalendarDays, Star, Sparkles,
   ChevronLeft, ChevronRight, X, LogOut,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -16,6 +16,7 @@ import { useLanguage } from '@/context/LanguageContext'
 const MAIN_NAV = [
   { path: '/overview',         icon: LayoutDashboard, labelAr: 'نظرة عامة',          labelEn: 'Overview'               },
   { path: '/schedule',         icon: CalendarDays,    labelAr: 'الجدول',             labelEn: 'Schedule'               },
+  { path: '/ai-schedule',      icon: Sparkles,        labelAr: 'جدول ذكي (AI)',      labelEn: 'AI Schedule'            },
   { path: '/permissions',      icon: Clock,           labelAr: 'ساعات الإذن',        labelEn: 'Permission Hours'       },
   { path: '/annual-leave',     icon: Calendar,        labelAr: 'الإجازة السنوية',    labelEn: 'Annual Leave'           },
   { path: '/sick-leave',       icon: HeartPulse,      labelAr: 'الإجازة المرضية',    labelEn: 'Sick Leave'             },
