@@ -17,6 +17,7 @@ import type { ScheduleEntry, ScheduleCellType, ChangeOURecord } from '@/types/hr
 import type { ScheduleInput } from '@/hooks/useSchedule'
 import type { ChangeOUInput } from '@/hooks/useChangeOU'
 import type { WorkingDayOffInput } from '@/hooks/useWorkingDayOff'
+import { exportScheduleXlsx } from '@/lib/exportScheduleXlsx'
 
 const WE = '#6B21A8'
 
@@ -48,23 +49,23 @@ const COU_DEFAULTS = getCOUDefaults('south')
 
 // ── Branch cell colors ────────────────────────────────────────────────────
 
-const BRANCH_CELL: Record<string, { bg: string; fg: string; short: string }> = {
-  // South Menia
-  'br-01': { bg: 'rgba(220,38,38,0.22)',   fg: '#fca5a5', short: 'ملوى'    },
-  'br-02': { bg: 'rgba(124,58,237,0.22)',  fg: '#c4b5fd', short: 'دير مواس'},
-  'br-03': { bg: 'rgba(22,163,74,0.22)',   fg: '#86efac', short: 'دلجا'    },
-  'br-04': { bg: 'rgba(4,120,87,0.22)',    fg: '#6ee7b7', short: 'ابوقرقاص'},
-  'br-05': { bg: 'rgba(159,18,57,0.25)',   fg: '#fda4af', short: 'المنيا'  },
-  'br-06': { bg: 'rgba(161,98,7,0.25)',    fg: '#fde047', short: 'منيا ج.' },
-  'br-07': { bg: 'rgba(63,98,18,0.28)',    fg: '#bef264', short: 'بني أحمد'},
-  'br-08': { bg: 'rgba(30,64,175,0.25)',   fg: '#93c5fd', short: 'صفط'     },
+const BRANCH_CELL: Record<string, { bg: string; fg: string; short: string; hex: string }> = {
+  // South Menia — colors matched to official schedule (Schedule02.htm)
+  'br-01': { bg: 'rgba(255,0,0,0.22)',     fg: '#ff9999', short: 'ملوى',     hex: '#ff0000' },
+  'br-02': { bg: 'rgba(112,48,160,0.28)',  fg: '#c084fc', short: 'دير مواس', hex: '#7030a0' },
+  'br-03': { bg: 'rgba(100,221,109,0.20)', fg: '#64dd6d', short: 'دلجا',     hex: '#64dd6d' },
+  'br-04': { bg: 'rgba(0,102,0,0.30)',     fg: '#4ade80', short: 'ابوقرقاص', hex: '#006600' },
+  'br-05': { bg: 'rgba(128,0,0,0.32)',     fg: '#fca5a5', short: 'المنيا',   hex: '#800000' },
+  'br-06': { bg: 'rgba(255,255,0,0.16)',   fg: '#fde047', short: 'منيا ج.',  hex: '#ffff00' },
+  'br-07': { bg: 'rgba(82,124,3,0.30)',    fg: '#bef264', short: 'بني أحمد', hex: '#527c03' },
+  'br-08': { bg: 'rgba(0,64,128,0.30)',    fg: '#93c5fd', short: 'صفط',      hex: '#004080' },
   // North Menia
-  'br-n01': { bg: 'rgba(14,116,144,0.25)',  fg: '#67e8f9', short: 'سمالوط'  },
-  'br-n02': { bg: 'rgba(6,78,59,0.28)',     fg: '#6ee7b7', short: 'بني مزار'},
-  'br-n03': { bg: 'rgba(194,65,12,0.25)',   fg: '#fdba74', short: 'مغاغة'   },
-  'br-n04': { bg: 'rgba(109,40,217,0.25)',  fg: '#ddd6fe', short: 'المنيا م.'},
-  'br-n05': { bg: 'rgba(31,41,55,0.35)',    fg: '#d1d5db', short: 'العدوة'  },
-  'br-n06': { bg: 'rgba(180,83,9,0.25)',    fg: '#fcd34d', short: 'مطاي'    },
+  'br-n01': { bg: 'rgba(14,116,144,0.25)',  fg: '#67e8f9', short: 'سمالوط',   hex: '#0e7490' },
+  'br-n02': { bg: 'rgba(6,78,59,0.28)',     fg: '#6ee7b7', short: 'بني مزار', hex: '#064e3b' },
+  'br-n03': { bg: 'rgba(194,65,12,0.25)',   fg: '#fdba74', short: 'مغاغة',    hex: '#c2410c' },
+  'br-n04': { bg: 'rgba(109,40,217,0.25)',  fg: '#ddd6fe', short: 'المنيا م.', hex: '#6d28d9' },
+  'br-n05': { bg: 'rgba(31,41,55,0.35)',    fg: '#d1d5db', short: 'العدوة',   hex: '#1f2937' },
+  'br-n06': { bg: 'rgba(180,83,9,0.25)',    fg: '#fcd34d', short: 'مطاي',     hex: '#b45309' },
 }
 
 type CellStyle = { bg: string; fg: string; label: string; sub?: string }
@@ -2130,7 +2131,7 @@ function SchedulePageInner({ region }: { region: Region }) {
           ))}
         </div>
 
-        {/* Month nav (matrix / list) */}
+        {/* Month nav + Excel export (matrix / list) */}
         {view !== 'changeou' && view !== 'analytics' && (
           <div className="flex items-center gap-2">
             <button onClick={prevMonth} className="p-1.5 rounded-lg text-secondary hover:text-primary hover:bg-elevated transition-colors"><ChevronRight size={16} /></button>
@@ -2140,6 +2141,17 @@ function SchedulePageInner({ region }: { region: Region }) {
             </button>
             <span className="text-sm font-black text-primary">{monthLabel}</span>
             <button onClick={nextMonth} className="p-1.5 rounded-lg text-secondary hover:text-primary hover:bg-elevated transition-colors"><ChevronLeft size={16} /></button>
+
+            {/* Excel export */}
+            <button
+              onClick={() => exportScheduleXlsx(filteredEmployees, branches, monthEntries, monthLabel, year, month)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all hover:brightness-110 active:scale-95"
+              style={{ background: 'rgba(34,197,94,0.14)', border: '1px solid rgba(134,239,172,0.25)', color: '#86efac' }}
+              title="تصدير الجدول كملف Excel"
+            >
+              <Download size={13} />
+              Excel
+            </button>
           </div>
         )}
       </div>
