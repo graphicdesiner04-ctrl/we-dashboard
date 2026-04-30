@@ -1,6 +1,6 @@
 // ── WE AI Schedule Generator ─────────────────────────────────────────────────
 // Algorithmic schedule generation for South region.
-// Rules: FINAL SYSTEM doc 2026-04-30
+// Rules: FINAL SYSTEM doc 2026-04-30 (updated shift correction 2026-04-30)
 
 import type { Employee, Branch } from '@/types/hr'
 import type { ScheduleInput } from '@/hooks/useSchedule'
@@ -33,28 +33,76 @@ export const BRANCH_QUOTA: Record<string, [number, number]> = {
 export const MAIN_BRANCH_ORDER = ['br-02', 'br-01', 'br-04', 'br-06', 'br-05']
 
 // ── Fixed senior assignments ──────────────────────────────────────────────────
-export const SENIOR_MALLAWY = 'emp-15' // Ahmed Hassan — fixed ملوي, always Week 1
+export const SENIOR_MALLAWY = 'emp-15' // Ahmed Hassan — fixed ملوي, Sun–Thu 5 days
 // Monthly-rotating Minya seniors (pairs swap each month)
 // Pair A → br-05, Pair B → br-06 (then swap next month)
 export const SENIORS_MINYA_A = ['emp-13', 'emp-16'] // Ahmed Galal, Ali Mahrous
 export const SENIORS_MINYA_B = ['emp-14', 'emp-17'] // Mohamed Hisham, Ahmed Alaa
-
 export const ALL_SENIORS_MINYA = [...SENIORS_MINYA_A, ...SENIORS_MINYA_B]
 
-// ── Shift day sets (JS: 0=Sun 1=Mon … 6=Sat) ─────────────────────────────────
-const W1 = new Set([0, 1, 4, 5, 6]) // Week1: Sun Mon Thu Fri Sat
-const W2 = new Set([2, 3])           // Week2: Tue Wed  (exact reverse of W1)
-const SMALL_OPEN = new Set([0, 1, 2, 3, 4, 6]) // Sat–Thu (no Fri=5)
+// ── Shift day sets (JS: 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat) ───────────
+// Shift A: Sat + Tue + Wed  (3 working days)
+// Shift B: Sun + Mon + Thu + Fri  (4 working days)
+// They swap every week → each employee alternates A then B then A …
+const SHIFT_A = new Set([6, 2, 3])       // Sat, Tue, Wed
+const SHIFT_B = new Set([0, 1, 4, 5])    // Sun, Mon, Thu, Fri
+
+// Senior Mallawy fixed work days: Sun–Thu (5 days every week, no rotation)
+const SENIOR_MALLAWY_DAYS = new Set([0, 1, 2, 3, 4]) // Sun Mon Tue Wed Thu
+
+// Small branches open days: Sat–Thu (no Fri)
+const SMALL_OPEN = new Set([0, 1, 2, 3, 4, 6]) // all except Fri=5
+
+// ── Default home branches per employee (user-defined, 2026-04-30) ─────────────
+export const DEFAULT_HOME_BRANCHES: Record<string, string> = {
+  // دلجا (br-03)
+  'emp-26': 'br-03', // احمد صلاح
+
+  // دير مواس (br-02)
+  'emp-21': 'br-02', // محمد ربيع
+  'emp-38': 'br-02', // احمد راوي
+  'emp-31': 'br-02', // احمد محمد حسن اسماعيل
+
+  // ملوي (br-01)
+  'emp-24': 'br-01', // محمود جمال
+  'emp-28': 'br-01', // وليد احمد
+  'emp-23': 'br-01', // فادي عطا
+
+  // أبوقرقاص (br-04)
+  'emp-34': 'br-04', // محمد يسري
+  'emp-30': 'br-04', // احمد ظريف
+  'emp-37': 'br-04', // هاني محسن
+  'emp-12': 'br-04', // روماني عيسى
+
+  // بني أحمد (br-07)
+  'emp-41': 'br-07', // محمد ناصر محمد شحاته
+
+  // صفط الخمار (br-08)
+  'emp-22': 'br-08', // محمد جابر
+
+  // المنيا (br-05)
+  'emp-27': 'br-05', // احمد محمود احمد
+  'emp-19': 'br-05', // عاصم جمال
+  'emp-20': 'br-05', // محمود حمدي
+  'emp-29': 'br-05', // مصطفى عبد الكافي
+  'emp-32': 'br-05', // محمد احمد سيد
+  'emp-33': 'br-05', // محمود محمد اسماعيل
+  'emp-18': 'br-05', // وائل محمد
+
+  // المنيا الجديدة (br-06)
+  'emp-36': 'br-06', // محمد عبد العظيم
+  'emp-25': 'br-06', // عبد الرحمن محمد
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type EmployeeType = 'WE' | 'IBS'
-export type WeekParity = 1 | 2
+export type ShiftType = 'A' | 'B' // A = Sat+Tue+Wed, B = Sun+Mon+Thu+Fri
 
 export interface EmployeeAIConfig {
   employeeId: string
   homeBranchId: string  // for distance-based assignment
-  weekParity: WeekParity // parity on the FIRST generated week
+  shift: ShiftType       // starting shift on the first generated week
 }
 
 export interface VacationWeek {
@@ -69,6 +117,7 @@ export interface AIConfig {
   empConfigs: EmployeeAIConfig[]
   vacations: VacationWeek[]
   visitCounts: Record<string, number> // cumulative visit history
+  autoVacation: boolean     // if true, assign balanced vacations for employees missing one
 }
 
 export interface AIWarning {
@@ -90,6 +139,7 @@ export interface AIResult {
   warnings: AIWarning[]
   visitCounts: Record<string, number>
   weekVisits: WeekVisitInfo[]
+  autoVacationsAdded: VacationWeek[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -100,14 +150,14 @@ export function classifyEmp(emp: Employee): EmployeeType {
 
 function geoIdx(brId: string): number {
   const i = GEO_ORDER.indexOf(brId)
-  return i < 0 ? 5 : i // default near المنيا
+  return i < 0 ? 5 : i
 }
 
 function geoDist(a: string, b: string): number {
   return Math.abs(geoIdx(a) - geoIdx(b))
 }
 
-function addDays(iso: string, n: number): string {
+export function addDays(iso: string, n: number): string {
   const d = new Date(iso)
   d.setDate(d.getDate() + n)
   return d.toISOString().slice(0, 10)
@@ -119,6 +169,76 @@ function weekDates(sun: string): string[] {
 
 function dow(iso: string): number {
   return new Date(iso).getDay()
+}
+
+function getSunday(iso: string): string {
+  const d   = new Date(iso)
+  const day = d.getDay()
+  d.setDate(d.getDate() - day)
+  return d.toISOString().slice(0, 10)
+}
+
+// ── Auto vacation balancer ────────────────────────────────────────────────────
+// For each eligible agent without a manual vacation in the period,
+// assign a balanced random week (max ~2 employees/week on vacation).
+
+export function autoAssignVacations(
+  agents: Employee[],
+  existingVacations: VacationWeek[],
+  startDate: string,
+  weeks: number,
+): VacationWeek[] {
+  const added: VacationWeek[] = []
+
+  // Agents who already have a vacation in this period
+  const allSundays = Array.from({ length: weeks }, (_, i) => addDays(startDate, i * 7))
+  const periodStart = startDate
+  const periodEnd   = addDays(startDate, weeks * 7 - 1)
+
+  const coveredEmpIds = new Set(
+    existingVacations
+      .filter(v => v.weekStart >= periodStart && v.weekStart <= periodEnd)
+      .map(v => v.employeeId),
+  )
+
+  const needVacation = agents.filter(e => !coveredEmpIds.has(e.id))
+  if (!needVacation.length) return []
+
+  // Count how many vacations are already on each week
+  const weekLoad: Record<string, number> = {}
+  for (const sun of allSundays) weekLoad[sun] = 0
+  for (const v of existingVacations) {
+    if (allSundays.includes(v.weekStart)) {
+      weekLoad[v.weekStart] = (weekLoad[v.weekStart] ?? 0) + 1
+    }
+  }
+
+  // Max employees on vacation per week = ceil(agents.length / weeks) + 1
+  const maxPerWeek = Math.ceil((needVacation.length + existingVacations.length) / weeks) + 1
+
+  // Shuffle employees for randomness
+  const shuffled = [...needVacation].sort(() => Math.random() - 0.5)
+
+  for (const emp of shuffled) {
+    // Pick the week with the fewest vacations (balanced)
+    const available = allSundays.filter(sun => (weekLoad[sun] ?? 0) < maxPerWeek)
+    if (!available.length) continue
+
+    // Sort by load, then pick randomly among the least-loaded
+    available.sort((a, b) => (weekLoad[a] ?? 0) - (weekLoad[b] ?? 0))
+    const minLoad = weekLoad[available[0]] ?? 0
+    const candidates = available.filter(s => (weekLoad[s] ?? 0) === minLoad)
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)]
+
+    weekLoad[chosen] = (weekLoad[chosen] ?? 0) + 1
+    added.push({
+      id: `auto-${emp.id}-${chosen}`,
+      employeeId: emp.id,
+      weekStart: chosen,
+    })
+  }
+
+  return added
 }
 
 // ── Main generator ────────────────────────────────────────────────────────────
@@ -136,9 +256,27 @@ export function generateAISchedule(
   const brMap = new Map(branches.map(b => [b.id, b]))
   const cfgMap = new Map(config.empConfigs.map(c => [c.employeeId, c]))
 
-  // ── Vacation days ──────────────────────────────────────────────────────────
+  // ── Eligible employees ─────────────────────────────────────────────────────
+  const eligible = employees.filter(e =>
+    e.role !== 'Supervisor' &&
+    (e.region ?? 'south') === 'south',
+  )
+  const agents = eligible.filter(e => e.role === 'Agent')
+
+  // ── Auto-vacation ──────────────────────────────────────────────────────────
+  let allVacations = [...config.vacations]
+  let autoVacationsAdded: VacationWeek[] = []
+
+  if (config.autoVacation) {
+    autoVacationsAdded = autoAssignVacations(
+      agents, config.vacations, config.startDate, config.weeks,
+    )
+    allVacations = [...allVacations, ...autoVacationsAdded]
+  }
+
+  // ── Vacation days set ──────────────────────────────────────────────────────
   const vacDays = new Set<string>()
-  for (const v of config.vacations) {
+  for (const v of allVacations) {
     for (let i = 0; i < 5; i++) {
       const d = addDays(v.weekStart, i)
       vacDays.add(`${v.employeeId}:${d}`)
@@ -146,38 +284,36 @@ export function generateAISchedule(
         employeeId: v.employeeId,
         date: d,
         cellType: 'annual',
-        note: 'AI — إجازة سنوية',
+        note: autoVacationsAdded.some(a => a.id === v.id)
+          ? 'AI — إجازة سنوية (تلقائي)'
+          : 'AI — إجازة سنوية',
       })
     }
   }
 
-  // ── Eligible employees ─────────────────────────────────────────────────────
-  const eligible = employees.filter(e =>
-    e.role !== 'Supervisor' &&
-    (e.region ?? 'south') === 'south',
-  )
-  const agents = eligible.filter(e => e.role === 'Agent')
+  // Visit pools
   const ibsAgents = agents.filter(e => classifyEmp(e) === 'IBS')
-
-  // Visit pool: agents whose home is NOT a small branch
   const visitPool = agents.filter(e => {
-    const home = cfgMap.get(e.id)?.homeBranchId ?? e.branchId ?? 'br-05'
+    const home = cfgMap.get(e.id)?.homeBranchId
+      ?? DEFAULT_HOME_BRANCHES[e.id]
+      ?? e.branchId
+      ?? 'br-05'
     return !SMALL_BRANCHES.has(home)
   })
   const weVisit  = visitPool.filter(e => classifyEmp(e) === 'WE')
   const ibsVisit = visitPool.filter(e => classifyEmp(e) === 'IBS')
 
-  // ── Parity helpers ─────────────────────────────────────────────────────────
-  function empParity(empId: string, weekOffset: number): WeekParity {
-    if (empId === SENIOR_MALLAWY) return 1 // always W1
-    const base = cfgMap.get(empId)?.weekParity ?? 1
-    return (((base - 1 + weekOffset) % 2) + 1) as WeekParity
+  // ── Shift helpers ──────────────────────────────────────────────────────────
+  function empShift(empId: string, weekOffset: number): ShiftType {
+    if (empId === SENIOR_MALLAWY) return 'A' // uses own day set, shift irrelevant
+    const base = cfgMap.get(empId)?.shift ?? 'A'
+    return ((base === 'A' ? 0 : 1) + weekOffset) % 2 === 0 ? 'A' : 'B'
   }
 
   function isWorkDay(empId: string, date: string, weekOffset: number): boolean {
-    const p = empParity(empId, weekOffset)
-    const d = dow(date)
-    return p === 1 ? W1.has(d) : W2.has(d)
+    if (empId === SENIOR_MALLAWY) return SENIOR_MALLAWY_DAYS.has(dow(date))
+    const s = empShift(empId, weekOffset)
+    return s === 'A' ? SHIFT_A.has(dow(date)) : SHIFT_B.has(dow(date))
   }
 
   function available(empId: string, date: string): boolean {
@@ -223,7 +359,7 @@ export function generateAISchedule(
       const d         = dow(date)
       const usedToday = new Set<string>()
 
-      // Mark visit employee
+      // Visit employee
       if (visitEmp) {
         usedToday.add(visitEmp.id)
         if (isWorkDay(visitEmp.id, date, w) && available(visitEmp.id, date)) {
@@ -239,8 +375,8 @@ export function generateAISchedule(
         }
       }
 
-      // ── Senior Mallawy (emp-15) — always W1 ────────────────────────────
-      if (W1.has(d) && available(SENIOR_MALLAWY, date)) {
+      // Senior Mallawy — Sun–Thu fixed
+      if (SENIOR_MALLAWY_DAYS.has(d) && available(SENIOR_MALLAWY, date)) {
         entries.push({
           employeeId: SENIOR_MALLAWY,
           branchId: 'br-01',
@@ -253,7 +389,7 @@ export function generateAISchedule(
         usedToday.add(SENIOR_MALLAWY)
       }
 
-      // ── Minya rotating seniors ──────────────────────────────────────────
+      // Minya rotating seniors
       for (const sid of pairBr05) {
         if (isWorkDay(sid, date, w) && available(sid, date)) {
           entries.push({
@@ -284,8 +420,10 @@ export function generateAISchedule(
               isWorkDay(e.id, date, w),
             )
             .sort((a, b) => {
-              const ha = cfgMap.get(a.id)?.homeBranchId ?? a.branchId ?? 'br-05'
-              const hb = cfgMap.get(b.id)?.homeBranchId ?? b.branchId ?? 'br-05'
+              const ha = cfgMap.get(a.id)?.homeBranchId
+                ?? DEFAULT_HOME_BRANCHES[a.id] ?? a.branchId ?? 'br-05'
+              const hb = cfgMap.get(b.id)?.homeBranchId
+                ?? DEFAULT_HOME_BRANCHES[b.id] ?? b.branchId ?? 'br-05'
               return geoDist(ha, brId) - geoDist(hb, brId)
             })[0]
 
@@ -305,14 +443,12 @@ export function generateAISchedule(
         }
       }
 
-      // ── Main branches ───────────────────────────────────────────────────
-      // Remaining agents available today
+      // ── Main branches — agents ──────────────────────────────────────────
       const freeAgents = agents.filter(e =>
         !usedToday.has(e.id) &&
         available(e.id, date) &&
         isWorkDay(e.id, date, w),
       )
-
       const dayUsed = new Set<string>(usedToday)
 
       for (const brId of MAIN_BRANCH_ORDER) {
@@ -322,8 +458,10 @@ export function generateAISchedule(
         const pool = freeAgents
           .filter(e => !dayUsed.has(e.id))
           .sort((a, b) => {
-            const ha = cfgMap.get(a.id)?.homeBranchId ?? a.branchId ?? 'br-05'
-            const hb = cfgMap.get(b.id)?.homeBranchId ?? b.branchId ?? 'br-05'
+            const ha = cfgMap.get(a.id)?.homeBranchId
+              ?? DEFAULT_HOME_BRANCHES[a.id] ?? a.branchId ?? 'br-05'
+            const hb = cfgMap.get(b.id)?.homeBranchId
+              ?? DEFAULT_HOME_BRANCHES[b.id] ?? b.branchId ?? 'br-05'
             return geoDist(ha, brId) - geoDist(hb, brId)
           })
 
@@ -349,27 +487,24 @@ export function generateAISchedule(
     }
   }
 
-  return { entries, warnings, visitCounts, weekVisits }
+  return { entries, warnings, visitCounts, weekVisits, autoVacationsAdded }
 }
 
-// ── Utility: detect current parity from existing entries ──────────────────────
-// Looks at the last known work-day entry before startDate and infers parity.
-export function inferParity(
+// ── Infer current shift from existing entries ─────────────────────────────────
+export function inferShift(
   empId: string,
   existingEntries: Array<{ employeeId: string; date: string; cellType: string }>,
   beforeDate: string,
-): WeekParity {
+): ShiftType {
   const workEntries = existingEntries
     .filter(e => e.employeeId === empId && e.cellType === 'branch' && e.date < beforeDate)
     .sort((a, b) => b.date.localeCompare(a.date))
 
-  if (!workEntries.length) return 1
+  if (!workEntries.length) return 'A'
 
   const lastDate = workEntries[0].date
   const d        = dow(lastDate)
-  // If last work day was in W1 set → was on W1 that week
-  // Then determine parity of the generation start week relative to that week
-  const wasW1 = W1.has(d)
+  const wasA     = SHIFT_A.has(d)
 
   const lastSun  = getSunday(lastDate)
   const startSun = getSunday(beforeDate)
@@ -377,13 +512,6 @@ export function inferParity(
     (new Date(startSun).getTime() - new Date(lastSun).getTime()) / (7 * 86400000),
   )
 
-  const lastParity: WeekParity = wasW1 ? 1 : 2
-  return (((lastParity - 1 + weekDiff) % 2) + 1) as WeekParity
-}
-
-function getSunday(iso: string): string {
-  const d   = new Date(iso)
-  const day = d.getDay()
-  d.setDate(d.getDate() - day)
-  return d.toISOString().slice(0, 10)
+  const lastShift: ShiftType = wasA ? 'A' : 'B'
+  return ((lastShift === 'A' ? 0 : 1) + weekDiff) % 2 === 0 ? 'A' : 'B'
 }
