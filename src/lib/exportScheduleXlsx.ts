@@ -2,11 +2,13 @@
 // Exports the schedule matrix as a colored Excel sheet.
 // Branch fill colors match the official WE schedule (Schedule02.htm).
 
-import * as XLSX from 'xlsx'
+// xlsx-js-style is a drop-in fork of xlsx that supports the `s` (style) property.
+// The free xlsx@0.18.5 silently ignores styles; xlsx-js-style renders them correctly.
+import * as XLSX from 'xlsx-js-style'
 import type { Employee, Branch, ScheduleEntry } from '@/types/hr'
 import type { ScheduleInput } from '@/hooks/useSchedule'
 
-// xlsx doesn't export CellStyle — define locally
+// xlsx-js-style types aren't always exported — define locally for safety
 type XlsxStyle = {
   fill?:      { patternType: string; fgColor: { rgb: string }; bgColor: { rgb: string } }
   font?:      { name?: string; sz?: number; bold?: boolean; color?: { rgb: string } }
