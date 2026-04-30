@@ -256,14 +256,6 @@ export const EMPLOYEES: Employee[] = [
     dsPortalName: 'Mohamed Ahmed Hassan Mohamed',
   },
   {
-    id: 'emp-40', user: 'mohamed.a163825', domainName: 'Mohamed.A163825',
-    name: '', nameEn: 'Mohamed Abd-El Mohsen Ahmed Abd-El Mohsen',
-    email: 'Mohamed.A163825@te.eg', mobile: '1002039749', nationalId: '29202012402679', employeeCode: '163825',
-    level: 8, role: 'Agent',
-    operatorAccount: 'Mohamed AbdelMohsen Ahmed Abd-El Mohsen',
-    dsPortalName: 'Mohamed Abd-El Mohsen Ahmed Abd-El Mohsen',
-  },
-  {
     id: 'emp-41', user: 'ibs.mohamed.295879', domainName: 'Ibs.Mohamed.295879',
     name: '', nameEn: 'Mohamed Nasser Mohamed Shehata',
     email: 'Ibs.Mohamed.295879@te.eg', mobile: '', nationalId: '', employeeCode: '295879',

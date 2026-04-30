@@ -4,6 +4,7 @@
 
 import * as XLSX from 'xlsx'
 import type { Employee, Branch, ScheduleEntry } from '@/types/hr'
+import type { ScheduleInput } from '@/hooks/useSchedule'
 
 // xlsx doesn't export CellStyle — define locally
 type XlsxStyle = {
@@ -227,4 +228,137 @@ export function exportScheduleXlsx(
   XLSX.utils.book_append_sheet(wb, wsLegend, 'دليل الألوان')
 
   XLSX.writeFile(wb, `Schedule-${year}-${String(month).padStart(2, '0')}.xlsx`)
+}
+
+// ── AI range export — one sheet per month in a single workbook ────────────
+export function exportAIScheduleXlsx(
+  employees: Employee[],
+  branches: Branch[],
+  entries: ScheduleInput[],
+  startDate: string,
+  weeks: number,
+) {
+  const MONTH_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']
+  const wb = XLSX.utils.book_new()
+
+  // Collect unique year-month pairs in the range
+  const seen = new Set<string>()
+  const months: { year: number; month: number }[] = []
+  const d = new Date(startDate + 'T00:00:00')
+  const totalDays = weeks * 7
+  for (let i = 0; i < totalDays; i++) {
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      months.push({ year: d.getFullYear(), month: d.getMonth() + 1 })
+    }
+    d.setDate(d.getDate() + 1)
+  }
+
+  const addMonthSheet = (year: number, month: number) => {
+    const label = `${MONTH_AR[month - 1]} ${year}`
+    const daysInMonth = new Date(year, month, 0).getDate()
+    const days: string[] = []
+    for (let dd = 1; dd <= daysInMonth; dd++) {
+      days.push(`${year}-${String(month).padStart(2,'0')}-${String(dd).padStart(2,'0')}`)
+    }
+    const entryMap = new Map<string, ScheduleInput>()
+    for (const e of entries) {
+      if (e.date >= days[0] && e.date <= days[days.length - 1]) {
+        entryMap.set(`${e.employeeId}:${e.date}`, e)
+      }
+    }
+
+    const ws: XLSX.WorkSheet = {}
+    const range = { s: { r: 0, c: 0 }, e: { r: 0, c: 0 } }
+    const DOW_AR = ['أحد','اثنين','ثلاثاء','أربعاء','خميس','جمعة','سبت']
+    const hdrFill = makeFill('2D1B69')
+    const hdrFont = { name: 'Cairo', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }
+    const hdrStyle: XlsxStyle = { fill: hdrFill, font: hdrFont, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } } }
+    ws['A1'] = { t: 's', v: `جدول العمل — ${label}`, s: { ...hdrStyle, font: { ...hdrFont, sz: 14, bold: true } } }
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: employees.length + 1 } }]
+
+    const setCell = (r: number, c: number, v: string | number, style?: XlsxStyle) => {
+      const addr = XLSX.utils.encode_cell({ r, c })
+      ws[addr] = { t: typeof v === 'number' ? 'n' : 's', v, s: style }
+      if (r > range.e.r) range.e.r = r
+      if (c > range.e.c) range.e.c = c
+    }
+
+    setCell(1, 0, 'التاريخ', hdrStyle)
+    setCell(1, 1, 'اليوم', hdrStyle)
+    for (let i = 0; i < employees.length; i++) {
+      const emp = employees[i]
+      setCell(1, i + 2, (emp.nameEn || emp.name || emp.domainName || emp.user).slice(0, 28), hdrStyle)
+    }
+
+    for (let di = 0; di < days.length; di++) {
+      const date = days[di]
+      const row  = di + 2
+      const dow  = new Date(date + 'T00:00:00').getDay()
+      const isFri = dow === 5
+      const dateFill = isFri ? makeFill('FFE0B2') : makeFill('F5F5F5')
+      const dateFont = { name: 'Cairo', sz: 9, bold: true, color: { rgb: isFri ? 'C2410C' : '1A1A2E' } }
+      const dateBorder = { top: { style: 'thin' as const }, bottom: { style: 'thin' as const }, left: { style: 'thin' as const }, right: { style: 'thin' as const } }
+      const dateStyle: XlsxStyle = { fill: dateFill, font: dateFont, alignment: { horizontal: 'center', vertical: 'center' }, border: dateBorder }
+      setCell(row, 0, date.slice(5), dateStyle)
+      setCell(row, 1, DOW_AR[dow], dateStyle)
+
+      for (let ei = 0; ei < employees.length; ei++) {
+        const emp   = employees[ei]
+        const entry = entryMap.get(`${emp.id}:${date}`)
+        let fillHex = 'F5F5F5', label = ''
+        if (entry) {
+          const ct = entry.cellType ?? 'branch'
+          if (ct === 'branch' && entry.branchId) {
+            fillHex = BRANCH_HEX[entry.branchId] ?? 'CCCCCC'
+            const b = branches.find(b => b.id === entry.branchId)
+            label = b?.storeNameAr || b?.storeName || entry.branchId
+          } else if (ct === 'visit')  { fillHex = TYPE_HEX.visit;  label = 'زيارة' }
+          else if (ct === 'off')      { fillHex = TYPE_HEX.off;    label = 'راحة'  }
+          else if (ct === 'annual')   { fillHex = TYPE_HEX.annual; label = 'سنوي'  }
+          else if (ct === 'sick')     { fillHex = TYPE_HEX.sick;   label = 'مريض'  }
+          else if (ct === 'swap')     { fillHex = TYPE_HEX.swap;   label = 'تبديل' }
+        }
+        const cellStyle: XlsxStyle = {
+          fill:      makeFill(fillHex),
+          font:      makeFont(fillHex, !!entry),
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border:    { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } },
+        }
+        setCell(row, ei + 2, label, cellStyle)
+      }
+    }
+
+    ws['!cols'] = [{ wch: 10 }, { wch: 7 }, ...employees.map(() => ({ wch: 14 }))]
+    ws['!rows'] = [{ hpx: 28 }, { hpx: 40 }, ...days.map(() => ({ hpx: 22 }))]
+    ws['!ref'] = XLSX.utils.encode_range(range)
+    XLSX.utils.book_append_sheet(wb, ws, label)
+  }
+
+  for (const { year, month } of months) addMonthSheet(year, month)
+
+  // Legend
+  const wsLegend: XLSX.WorkSheet = {}
+  const hdrStyle: XlsxStyle = { fill: makeFill('2D1B69'), font: { name: 'Cairo', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center' } }
+  wsLegend['A1'] = { t: 's', v: 'الفرع', s: hdrStyle }
+  wsLegend['B1'] = { t: 's', v: 'اللون', s: hdrStyle }
+  const legendItems = [
+    ...branches.map(b => ({ label: b.storeNameAr || b.storeName, hex: BRANCH_HEX[b.id] ?? 'CCCCCC' })),
+    { label: 'راحة',         hex: TYPE_HEX.off    },
+    { label: 'إجازة سنوية', hex: TYPE_HEX.annual },
+    { label: 'زيارة',        hex: TYPE_HEX.visit  },
+  ]
+  legendItems.forEach((item, i) => {
+    const r = i + 1
+    wsLegend[XLSX.utils.encode_cell({ r, c: 0 })] = { t: 's', v: item.label, s: { font: { name: 'Cairo', sz: 10 }, alignment: { horizontal: 'center' } } }
+    wsLegend[XLSX.utils.encode_cell({ r, c: 1 })] = { t: 's', v: '', s: { fill: makeFill(item.hex), font: makeFont(item.hex) } }
+  })
+  wsLegend['!cols'] = [{ wch: 18 }, { wch: 10 }]
+  wsLegend['!ref']  = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: legendItems.length, c: 1 } })
+  XLSX.utils.book_append_sheet(wb, wsLegend, 'دليل الألوان')
+
+  const endDate = new Date(startDate + 'T00:00:00')
+  endDate.setDate(endDate.getDate() + weeks * 7 - 1)
+  XLSX.writeFile(wb, `AI-Schedule-${startDate}-to-${endDate.toISOString().slice(0,10)}.xlsx`)
 }

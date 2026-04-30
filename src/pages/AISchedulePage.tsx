@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import {
   Sparkles, Play, CheckCircle, AlertTriangle, Trash2,
   Plus, ChevronDown, ChevronUp, CalendarDays, Users,
-  Info, Wand2, Shuffle,
+  Info, Wand2, Shuffle, Download, Eye, BarChart2,
 } from 'lucide-react'
 import { useSchedule } from '@/hooks/useSchedule'
 import { storage } from '@/lib/storage'
@@ -16,6 +16,8 @@ import type {
   ShiftType,
 } from '@/lib/scheduleAI'
 import type { Employee } from '@/types/hr'
+import type { ScheduleInput } from '@/hooks/useSchedule'
+import { exportAIScheduleXlsx } from '@/lib/exportScheduleXlsx'
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
 const KEY_EMPCFG    = 'ai-schedule-emp-configs'
@@ -164,6 +166,7 @@ export default function AISchedulePage() {
   const [autoVac, setAutoVac]       = useState(true)
   const [result, setResult]         = useState<AIResult | null>(null)
   const [applied, setApplied]       = useState(false)
+  const [resultTab, setResultTab]   = useState<'summary' | 'preview'>('summary')
 
   // ── Persistence helpers ────────────────────────────────────────────────────
   const saveEmpConfigs = useCallback((cfgs: EmployeeAIConfig[]) => {
@@ -561,7 +564,7 @@ export default function AISchedulePage() {
           className="rounded-2xl border mb-6"
           style={{ background: '#0D1527', borderColor: 'rgba(255,255,255,0.07)' }}
         >
-          {/* Stats */}
+          {/* Stats bar */}
           {stats && (
             <div
               className="grid grid-cols-3 border-b px-5 py-4"
@@ -573,119 +576,153 @@ export default function AISchedulePage() {
             </div>
           )}
 
-          <div className="px-5 py-4 space-y-5">
-
-            {/* Auto vacations info */}
-            {result.autoVacationsAdded.length > 0 && (
-              <div
-                className="p-3 rounded-xl flex items-start gap-2"
-                style={{ background: 'rgba(107,33,168,0.12)', border: '1px solid rgba(192,132,252,0.2)' }}
-              >
-                <Sparkles size={14} color="#C084FC" className="flex-shrink-0 mt-0.5" />
-                <p className="text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>
-                  تم توزيع إجازات تلقائية على{' '}
-                  <strong style={{ color: '#C084FC' }}>{result.autoVacationsAdded.length}</strong>
-                  {' '}موظف بشكل متوازن عبر الفترة
-                </p>
-              </div>
-            )}
-
-            {/* Weekly visits */}
-            {result.weekVisits.length > 0 && (
-              <div>
-                <p className="text-xs font-bold mb-2" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                  توزيع الزيارات الخارجية
-                </p>
-                <div className="space-y-1.5">
-                  {result.weekVisits.map((wv, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between p-2.5 rounded-xl"
-                      style={{ background: '#060C1A', border: '1px solid rgba(255,255,255,0.05)' }}
-                    >
-                      <div className="min-w-0">
-                        <span className="text-xs font-semibold truncate block" style={{ color: 'rgba(255,255,255,0.8)' }}>
-                          {getEmpDisplay(wv.employee)}
-                        </span>
-                        <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                          {fmtDate(wv.weekStart)}
-                        </span>
-                      </div>
-                      <Badge type={wv.empType} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Warnings */}
-            {result.warnings.length > 0 ? (
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle size={14} color="#FCD34D" />
-                  <p className="text-xs font-bold" style={{ color: '#FCD34D' }}>
-                    {result.warnings.length} تحذير — نقص تغطية
-                  </p>
-                </div>
-                <div className="space-y-1.5 max-h-56 overflow-y-auto">
-                  {Object.entries(warnsByBranch).map(([brId, warns]) => (
-                    <div
-                      key={brId}
-                      className="p-2.5 rounded-xl"
-                      style={{ background: 'rgba(252,211,77,0.06)', border: '1px solid rgba(252,211,77,0.15)' }}
-                    >
-                      <p className="text-xs font-bold mb-1" style={{ color: '#FCD34D' }}>
-                        {BR_NAME[brId] ?? brId} — {warns.length} يوم
-                      </p>
-                      {warns.slice(0, 3).map((w, i) => (
-                        <p key={i} className="text-[10px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
-                          {fmtDate(w.date)} ← محتاج {w.need} / وُجد {w.got}
-                        </p>
-                      ))}
-                      {warns.length > 3 && (
-                        <p className="text-[10px] mt-0.5" style={{ color: 'rgba(255,255,255,0.25)' }}>
-                          +{warns.length - 3} أيام أخرى
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <CheckCircle size={14} color="#86EFAC" />
-                <p className="text-xs font-semibold" style={{ color: '#86EFAC' }}>
-                  لا يوجد تحذيرات — التغطية مكتملة ✓
-                </p>
-              </div>
-            )}
-
-            {/* Apply / Done */}
-            {!applied ? (
+          {/* Tabs */}
+          <div
+            className="flex border-b px-5 gap-1 pt-3"
+            style={{ borderColor: 'rgba(255,255,255,0.07)' }}
+          >
+            {([
+              { id: 'summary', label: 'ملخص',         icon: BarChart2 },
+              { id: 'preview', label: 'معاينة الجدول', icon: Eye       },
+            ] as const).map(tab => (
               <button
-                onClick={handleApply}
-                className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl font-black text-sm transition-all active:scale-[0.98]"
+                key={tab.id}
+                onClick={() => setResultTab(tab.id)}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-t-lg transition-colors"
                 style={{
-                  background: 'rgba(34,197,94,0.12)',
-                  border: '1px solid rgba(134,239,172,0.3)',
-                  color: '#86EFAC',
+                  color:       resultTab === tab.id ? '#C084FC' : 'rgba(255,255,255,0.35)',
+                  background:  resultTab === tab.id ? 'rgba(107,33,168,0.15)' : 'transparent',
+                  borderBottom: resultTab === tab.id ? '2px solid #C084FC' : '2px solid transparent',
                 }}
               >
-                <Play size={16} />
-                تطبيق الجدول على السيستم
+                <tab.icon size={13} />
+                {tab.label}
               </button>
-            ) : (
-              <div
-                className="flex items-center justify-center gap-2 py-3.5 rounded-xl"
-                style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(134,239,172,0.2)' }}
-              >
-                <CheckCircle size={16} color="#86EFAC" />
-                <span className="text-sm font-black" style={{ color: '#86EFAC' }}>
-                  تم تطبيق الجدول بنجاح ✓
-                </span>
-              </div>
-            )}
+            ))}
           </div>
+
+          {/* ── Summary tab ── */}
+          {resultTab === 'summary' && (
+            <div className="px-5 py-4 space-y-5">
+
+              {result.autoVacationsAdded.length > 0 && (
+                <div
+                  className="p-3 rounded-xl flex items-start gap-2"
+                  style={{ background: 'rgba(107,33,168,0.12)', border: '1px solid rgba(192,132,252,0.2)' }}
+                >
+                  <Sparkles size={14} color="#C084FC" className="flex-shrink-0 mt-0.5" />
+                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                    تم توزيع إجازات تلقائية على{' '}
+                    <strong style={{ color: '#C084FC' }}>{result.autoVacationsAdded.length}</strong>
+                    {' '}موظف بشكل متوازن عبر الفترة
+                  </p>
+                </div>
+              )}
+
+              {result.weekVisits.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold mb-2" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                    توزيع الزيارات الخارجية
+                  </p>
+                  <div className="space-y-1.5">
+                    {result.weekVisits.map((wv, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between p-2.5 rounded-xl"
+                        style={{ background: '#060C1A', border: '1px solid rgba(255,255,255,0.05)' }}
+                      >
+                        <div className="min-w-0">
+                          <span className="text-xs font-semibold truncate block" style={{ color: 'rgba(255,255,255,0.8)' }}>
+                            {getEmpDisplay(wv.employee)}
+                          </span>
+                          <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                            {fmtDate(wv.weekStart)}
+                          </span>
+                        </div>
+                        <Badge type={wv.empType} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {result.warnings.length > 0 ? (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertTriangle size={14} color="#FCD34D" />
+                    <p className="text-xs font-bold" style={{ color: '#FCD34D' }}>
+                      {result.warnings.length} تحذير — نقص تغطية
+                    </p>
+                  </div>
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                    {Object.entries(warnsByBranch).map(([brId, warns]) => (
+                      <div
+                        key={brId}
+                        className="p-2.5 rounded-xl"
+                        style={{ background: 'rgba(252,211,77,0.06)', border: '1px solid rgba(252,211,77,0.15)' }}
+                      >
+                        <p className="text-xs font-bold mb-1" style={{ color: '#FCD34D' }}>
+                          {BR_NAME[brId] ?? brId} — {warns.length} يوم
+                        </p>
+                        {warns.slice(0, 3).map((w, i) => (
+                          <p key={i} className="text-[10px]" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                            {fmtDate(w.date)} ← محتاج {w.need} / وُجد {w.got}
+                          </p>
+                        ))}
+                        {warns.length > 3 && (
+                          <p className="text-[10px] mt-0.5" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                            +{warns.length - 3} أيام أخرى
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <CheckCircle size={14} color="#86EFAC" />
+                  <p className="text-xs font-semibold" style={{ color: '#86EFAC' }}>
+                    لا يوجد تحذيرات — التغطية مكتملة ✓
+                  </p>
+                </div>
+              )}
+
+              <ApplyButton applied={applied} onApply={handleApply} />
+            </div>
+          )}
+
+          {/* ── Preview tab ── */}
+          {resultTab === 'preview' && (
+            <div className="px-5 py-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                  {result.entries.length} خلية — {weeks} أسبوع من {startDate}
+                </p>
+                <button
+                  onClick={() => exportAIScheduleXlsx(eligible, branches, result.entries, startDate, weeks)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors"
+                  style={{
+                    background: 'rgba(34,197,94,0.14)',
+                    border: '1px solid rgba(134,239,172,0.25)',
+                    color: '#86efac',
+                  }}
+                >
+                  <Download size={13} />
+                  تصدير Excel
+                </button>
+              </div>
+
+              <AIPreviewMatrix
+                startDate={startDate}
+                weeks={weeks}
+                employees={eligible}
+                branches={branches}
+                entries={result.entries}
+              />
+
+              <ApplyButton applied={applied} onApply={handleApply} />
+            </div>
+          )}
         </div>
       )}
 
@@ -713,6 +750,156 @@ export default function AISchedulePage() {
           ))}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Apply button (reused in both tabs) ───────────────────────────────────────
+
+function ApplyButton({ applied, onApply }: { applied: boolean; onApply: () => void }) {
+  if (applied) {
+    return (
+      <div
+        className="flex items-center justify-center gap-2 py-3.5 rounded-xl"
+        style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(134,239,172,0.2)' }}
+      >
+        <CheckCircle size={16} color="#86EFAC" />
+        <span className="text-sm font-black" style={{ color: '#86EFAC' }}>تم تطبيق الجدول بنجاح ✓</span>
+      </div>
+    )
+  }
+  return (
+    <button
+      onClick={onApply}
+      className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-xl font-black text-sm transition-all active:scale-[0.98]"
+      style={{
+        background: 'rgba(34,197,94,0.12)',
+        border: '1px solid rgba(134,239,172,0.3)',
+        color: '#86EFAC',
+      }}
+    >
+      <Play size={16} />
+      تطبيق الجدول على السيستم
+    </button>
+  )
+}
+
+// ── Branch colors (mirror SchedulePage) ──────────────────────────────────────
+
+const PREVIEW_CELL: Record<string, { bg: string; fg: string; short: string }> = {
+  'br-01': { bg: 'rgba(255,0,0,0.22)',     fg: '#ff9999', short: 'ملوى'      },
+  'br-02': { bg: 'rgba(112,48,160,0.28)',  fg: '#c084fc', short: 'دير مواس'  },
+  'br-03': { bg: 'rgba(100,221,109,0.20)', fg: '#64dd6d', short: 'دلجا'      },
+  'br-04': { bg: 'rgba(0,102,0,0.30)',     fg: '#4ade80', short: 'ابوقرقاص'  },
+  'br-05': { bg: 'rgba(128,0,0,0.32)',     fg: '#fca5a5', short: 'المنيا'    },
+  'br-06': { bg: 'rgba(255,255,0,0.16)',   fg: '#fde047', short: 'منيا ج.'   },
+  'br-07': { bg: 'rgba(82,124,3,0.30)',    fg: '#bef264', short: 'بني أحمد'  },
+  'br-08': { bg: 'rgba(0,64,128,0.30)',    fg: '#93c5fd', short: 'صفط'       },
+}
+
+function previewCellStyle(entry: ScheduleInput): { bg: string; fg: string; label: string } {
+  const ct = entry.cellType ?? 'branch'
+  if (ct === 'branch' && entry.branchId) {
+    const s = PREVIEW_CELL[entry.branchId]
+    return s ? { bg: s.bg, fg: s.fg, label: s.short } : { bg: 'rgba(107,33,168,0.2)', fg: '#c084fc', label: entry.branchId }
+  }
+  if (ct === 'visit')  return { bg: 'rgba(245,158,11,0.18)',  fg: '#fcd34d', label: 'زيارة' }
+  if (ct === 'off')    return { bg: 'rgba(75,85,99,0.28)',    fg: '#9ca3af', label: 'Off'   }
+  if (ct === 'annual') return { bg: 'rgba(245,158,11,0.22)',  fg: '#fbbf24', label: 'سنوي'  }
+  if (ct === 'sick')   return { bg: 'rgba(239,68,68,0.22)',   fg: '#fca5a5', label: 'مريض'  }
+  if (ct === 'swap')   return { bg: 'rgba(20,184,166,0.22)',  fg: '#5eead4', label: '↔'     }
+  return { bg: 'transparent', fg: '#4b5563', label: '' }
+}
+
+// ── Preview matrix ────────────────────────────────────────────────────────────
+
+function AIPreviewMatrix({
+  startDate, weeks, employees, branches: _branches, entries,
+}: {
+  startDate: string
+  weeks: number
+  employees: Employee[]
+  branches: { id: string; storeNameAr?: string; storeName: string }[]
+  entries: ScheduleInput[]
+}) {
+  const days = useMemo(() => {
+    const result: string[] = []
+    const d = new Date(startDate + 'T00:00:00')
+    for (let i = 0; i < weeks * 7; i++) {
+      result.push(d.toISOString().slice(0, 10))
+      d.setDate(d.getDate() + 1)
+    }
+    return result
+  }, [startDate, weeks])
+
+  const entryIndex = useMemo(() => {
+    const m: Record<string, ScheduleInput> = {}
+    for (const e of entries) m[`${e.employeeId}|${e.date}`] = e
+    return m
+  }, [entries])
+
+  const agents  = useMemo(() => employees.filter(e => e.role !== 'Senior'), [employees])
+  const seniors = useMemo(() => employees.filter(e => e.role === 'Senior'), [employees])
+  const cols    = useMemo<(Employee | null)[]>(() => [...agents, null, ...seniors], [agents, seniors])
+
+  const DOW_AR = ['أحد','اثنين','ثلاث','أربع','خميس','جمعة','سبت']
+  const COL_W  = 72, DATE_W = 72, ROW_H = 44
+  const bg     = '#060C1A', border = 'rgba(255,255,255,0.07)'
+
+  return (
+    <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 520, borderRadius: 12, border: `1px solid ${border}` }}>
+      <table style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', minWidth: `${DATE_W + cols.length * COL_W}px` }}>
+        <thead>
+          <tr>
+            <th style={{ position: 'sticky', top: 0, left: 0, zIndex: 40, width: DATE_W, background: '#0D1527', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, padding: '4px 6px', textAlign: 'center' }}>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', fontWeight: 700 }}>التاريخ</span>
+            </th>
+            {cols.map((emp) => emp === null ? (
+              <th key="__sep__" style={{ position: 'sticky', top: 0, zIndex: 30, width: 16, background: '#111', borderBottom: `1px solid #222` }} />
+            ) : (
+              <th key={emp.id} style={{ position: 'sticky', top: 0, zIndex: 30, width: COL_W, background: '#0D1527', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, padding: '3px 2px', textAlign: 'center', verticalAlign: 'bottom' }}>
+                <p style={{ fontSize: 9, color: '#C084FC', fontWeight: 900 }}>{emp.employeeCode}</p>
+                <p style={{ fontSize: 8, color: 'rgba(255,255,255,0.4)', lineHeight: 1.2, overflow: 'hidden', maxHeight: 22 }}>
+                  {(emp.nameEn || emp.name || emp.user).split(' ')[0]}
+                </p>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {days.map(date => {
+            const dow  = new Date(date + 'T00:00:00').getDay()
+            const isFri = dow === 5
+            const isSat = dow === 6
+            const rowBg = isFri ? 'rgba(255,204,0,0.06)' : isSat ? 'rgba(255,255,255,0.02)' : bg
+            return (
+              <tr key={date}>
+                <td style={{ position: 'sticky', left: 0, zIndex: 10, width: DATE_W, background: rowBg, borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, padding: '2px 4px', textAlign: 'center', height: ROW_H }}>
+                  <p style={{ fontSize: 9, fontWeight: 700, color: isFri ? '#d97706' : 'rgba(255,255,255,0.4)' }}>{DOW_AR[dow]}</p>
+                  <p style={{ fontSize: 10, fontWeight: 900, color: 'rgba(255,255,255,0.75)', fontVariantNumeric: 'tabular-nums' }}>{date.slice(5)}</p>
+                </td>
+                {cols.map((emp) => emp === null ? (
+                  <td key="__sep__" style={{ width: 16, background: '#111', borderBottom: `1px solid #1a1a1a` }} />
+                ) : (
+                  <td key={emp.id} style={{ width: COL_W, height: ROW_H, borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, padding: 2, background: rowBg }}>
+                    {(() => {
+                      const entry = entryIndex[`${emp.id}|${date}`]
+                      if (!entry) return null
+                      const cs = previewCellStyle(entry)
+                      if (!cs.label) return null
+                      return (
+                        <div style={{ background: cs.bg, color: cs.fg, borderRadius: 5, padding: '2px 3px', fontSize: 9, fontWeight: 700, textAlign: 'center', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {cs.label}
+                        </div>
+                      )
+                    })()}
+                  </td>
+                ))}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }

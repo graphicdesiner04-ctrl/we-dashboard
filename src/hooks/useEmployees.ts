@@ -24,7 +24,8 @@ function uid() {
   return `emp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 }
 
-const NORTH_IDS = new Set(NORTH_EMPLOYEES.map(e => e.id))
+const NORTH_IDS   = new Set(NORTH_EMPLOYEES.map(e => e.id))
+const RESIGNED_IDS = new Set(['emp-40']) // resigned 2026-04-15
 
 export function useEmployees() {
   const [employees, setEmployees] = useState<Employee[]>(() => {
@@ -32,7 +33,7 @@ export function useEmployees() {
     if (raw !== null && Array.isArray(raw)) {
       // Always replace north employees with latest seed data so that
       // nameEn / region fields are never stale from old localStorage.
-      const southOnly     = raw.filter(e => !NORTH_IDS.has(e.id))
+      const southOnly     = raw.filter(e => !NORTH_IDS.has(e.id) && !RESIGNED_IDS.has(e.id))
       const existingSouth = new Set(southOnly.map(e => e.id))
       const missingSouth  = EMPLOYEES.filter(e => !existingSouth.has(e.id))
       return [...southOnly, ...missingSouth, ...NORTH_EMPLOYEES]
