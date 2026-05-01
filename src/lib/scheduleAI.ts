@@ -1,160 +1,144 @@
 // ── WE AI Schedule Generator ─────────────────────────────────────────────────
-// Rules: FINAL SYSTEM doc 2026-04-30 (confirmed from Schedule02.htm analysis)
+// Algorithm confirmed from Schedule02.htm reference analysis (2026-04-30).
 //
-// SHIFT SYSTEM (weekly alternation):
-//   WEEK1_DAYS = Sun(0) Mon(1) Thu(4) Fri(5) Sat(6)  — 5-day week
-//   WEEK2_DAYS = Tue(2) Wed(3)                         — 2-day week
-//   Employee shift 'A' → starts on WEEK1 in week-0 of the schedule
-//   Employee shift 'B' → starts on WEEK2 in week-0 of the schedule
-//   Alternates every week:  A→[W1,W2,W1,W2,…]  B→[W2,W1,W2,W1,…]
+// CORE PRINCIPLE: every employee goes to their HOME BRANCH on their working
+// days. Movement only occurs when an employee is on visit duty, or when the
+// gap-fixer needs to cover a branch left short by vacation.
 //
-// SMALL BRANCHES (br-03 دلجا, br-07 بني أحمد, br-08 صفط):
-//   Dedicated IBS employees — work every Sat–Thu (SMALL_OPEN), off on Fri.
-//   NOT in the rotation pool.
+// SHIFT CALIBRATION:
+//   Reference week: 2026-04-05 (Sunday).
+//   REFERENCE_WEEK2_GROUP employees did WEEK2 (Tue+Wed) that week → base shift 'B'.
+//   All others did WEEK1 (Sun+Mon+Thu+Fri+Sat) → base shift 'A'.
+//   For any schedule start date the correct shift is derived automatically.
 //
-// SENIOR MALLAWY (emp-15 Ahmed Hassan):
-//   Fixed at ملوي (br-01), Sun–Thu every week — no rotation.
+// SENIORS are OUTSIDE the branch-quota system — exactly like visit employees.
+//   They are pre-placed before the regular-agent loop and do NOT increment
+//   todayBranchCount. Each branch's BRANCH_NEEDS represents regular-agent slots.
 
 import type { Employee, Branch } from '@/types/hr'
 import type { ScheduleInput } from '@/hooks/useSchedule'
 
 // ── Geography: south → north ──────────────────────────────────────────────────
-// دلجا → دير مواس → ملوي → أبوقرقاص → بني أحمد → المنيا → صفط الخمار → المنيا الجديدة
 export const GEO_ORDER = [
-  'br-03', // دلجا            (0 — southernmost)
+  'br-03', // دلجا            (0)
   'br-02', // دير مواس        (1)
   'br-01', // ملوي             (2)
   'br-04', // أبوقرقاص        (3)
   'br-07', // بني أحمد        (4)
   'br-05', // المنيا           (5)
   'br-08', // صفط الخمار      (6)
-  'br-06', // المنيا الجديدة   (7 — northernmost)
+  'br-06', // المنيا الجديدة   (7)
 ]
 
-// Small branches: IBS only, open Sat–Thu (closed Fri)
+// Small branches: IBS only, open Sat–Thu (no Friday)
 export const SMALL_BRANCHES = new Set(['br-03', 'br-07', 'br-08'])
 
-// Dedicated employees for small branches — always at home branch, NOT in rotation pool
+// Dedicated IBS employees — always at their home branch, work every Sat–Thu
 const DEDICATED_MAP: Record<string, string> = {
-  'emp-26': 'br-03', // أحمد صلاح → دلجا
-  'emp-41': 'br-07', // محمد ناصر → بني أحمد
-  'emp-22': 'br-08', // محمد جابر → صفط الخمار
+  'emp-26': 'br-03',
+  'emp-41': 'br-07',
+  'emp-22': 'br-08',
 }
 const DEDICATED_IDS = new Set(Object.keys(DEDICATED_MAP))
 
-// Branch requirements: [min, max, ibsOnly]
-// Note: small-branch min/max count the dedicated employee
-// br-05 absorbs all remaining available agents
+// Branch regular-agent quotas [min, max, ibsOnly]
+// Seniors and visit employees are NOT included in these counts.
 const BRANCH_NEEDS: Record<string, [number, number, boolean]> = {
-  'br-03': [1, 1,  true ],  // دلجا            — dedicated emp-26
+  'br-03': [1, 1,  true ],  // دلجا         — dedicated emp-26
   'br-02': [1, 1,  false],  // دير مواس
-  'br-01': [1, 1,  false],  // ملوي             (senior pre-placed; pool fills 1 more)
+  'br-01': [1, 1,  false],  // ملوي          (senior Mallawy is additional, not counted)
   'br-04': [2, 2,  false],  // أبوقرقاص
-  'br-07': [1, 1,  true ],  // بني أحمد        — dedicated emp-41
-  'br-05': [2, 99, false],  // المنيا           — absorbs surplus
-  'br-08': [1, 1,  true ],  // صفط الخمار      — dedicated emp-22
+  'br-07': [1, 1,  true ],  // بني أحمد     — dedicated emp-41
+  'br-05': [2, 99, false],  // المنيا        — absorbs all surplus
+  'br-08': [1, 1,  true ],  // صفط الخمار   — dedicated emp-22
   'br-06': [1, 1,  false],  // المنيا الجديدة
 }
 
 // ── Fixed senior assignments ──────────────────────────────────────────────────
-export const SENIOR_MALLAWY    = 'emp-15'               // Ahmed Hassan — fixed ملوي Sun–Thu
-export const SENIORS_MINYA_A   = ['emp-13', 'emp-16']   // pair A → br-05 even period
-export const SENIORS_MINYA_B   = ['emp-14', 'emp-17']   // pair B → br-06 even period
+export const SENIOR_MALLAWY    = 'emp-15'
+export const SENIORS_MINYA_A   = ['emp-13', 'emp-16']  // → br-05 even periods
+export const SENIORS_MINYA_B   = ['emp-14', 'emp-17']  // → br-06 even periods
 export const ALL_SENIORS_MINYA = [...SENIORS_MINYA_A, ...SENIORS_MINYA_B]
 
-// ── Shift day sets (JS: 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat) ──────────
-const WEEK1_DAYS          = new Set([0, 1, 4, 5, 6]) // Sun, Mon, Thu, Fri, Sat (5-day)
-const WEEK2_DAYS          = new Set([2, 3])           // Tue, Wed (2-day)
-const SENIOR_MALLAWY_DAYS = new Set([0, 1, 2, 3, 4]) // Sun–Thu fixed
+// ── Shift day sets ────────────────────────────────────────────────────────────
+// JS: 0=Sun 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri 6=Sat
+const WEEK1_DAYS          = new Set([0, 1, 4, 5, 6]) // Sun Mon Thu Fri Sat
+const WEEK2_DAYS          = new Set([2, 3])           // Tue Wed
+const SENIOR_MALLAWY_DAYS = new Set([0, 1, 2, 3, 4]) // Sun–Thu
 const SMALL_OPEN          = new Set([0, 1, 2, 3, 4, 6]) // Sat–Thu (no Fri)
 
-// ── Default home branches per employee ───────────────────────────────────────
+// ── Reference date for automatic shift calibration ───────────────────────────
+// In the week of 2026-04-05 these employees worked WEEK2 (Tue+Wed) → base shift 'B'.
+// All other agents worked WEEK1 that week → base shift 'A'.
+export const REFERENCE_DATE = '2026-04-05'
+
+export const REFERENCE_WEEK2_GROUP = new Set([
+  // Confirmed Group A from Schedule02.htm (work Tue+Wed in reference week):
+  'emp-36', 'emp-30', 'emp-24', 'emp-38', 'emp-27',
+  'emp-19', 'emp-20', 'emp-31', 'emp-37', 'emp-33',
+  // Seniors following Group A pattern (confirmed from reference HTML):
+  'emp-17', // Ahmed Alaa 6882
+  'emp-16', // Ali Mahrous 5839
+])
+
+// ── Default home branches ─────────────────────────────────────────────────────
 export const DEFAULT_HOME_BRANCHES: Record<string, string> = {
-  // دلجا (br-03)
   'emp-26': 'br-03',
-
-  // دير مواس (br-02)
-  'emp-21': 'br-02',
-  'emp-38': 'br-02',
-  'emp-31': 'br-02',
-
-  // ملوي (br-01)
-  'emp-24': 'br-01',
-  'emp-28': 'br-01',
-  'emp-23': 'br-01',
-
-  // أبوقرقاص (br-04)
-  'emp-34': 'br-04',
-  'emp-30': 'br-04',
-  'emp-37': 'br-04',
-  'emp-12': 'br-04',
-
-  // بني أحمد (br-07)
+  'emp-21': 'br-02', 'emp-38': 'br-02', 'emp-31': 'br-02',
+  'emp-24': 'br-01', 'emp-28': 'br-01', 'emp-23': 'br-01',
+  'emp-34': 'br-04', 'emp-30': 'br-04', 'emp-37': 'br-04', 'emp-12': 'br-04',
   'emp-41': 'br-07',
-
-  // صفط الخمار (br-08)
   'emp-22': 'br-08',
-
-  // المنيا (br-05)
-  'emp-27': 'br-05',
-  'emp-19': 'br-05',
-  'emp-20': 'br-05',
-  'emp-29': 'br-05',
-  'emp-32': 'br-05',
-  'emp-33': 'br-05',
-  'emp-18': 'br-05',
-
-  // المنيا الجديدة (br-06)
-  'emp-36': 'br-06',
-  'emp-25': 'br-06',
+  'emp-27': 'br-05', 'emp-19': 'br-05', 'emp-20': 'br-05', 'emp-29': 'br-05',
+  'emp-32': 'br-05', 'emp-33': 'br-05', 'emp-18': 'br-05', 'emp-39': 'br-05',
+  'emp-36': 'br-06', 'emp-25': 'br-06',
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
 export type EmployeeType = 'WE' | 'IBS'
-export type ShiftType = 'A' | 'B'
+export type ShiftType    = 'A' | 'B'
 
 export interface EmployeeAIConfig {
-  employeeId: string
+  employeeId:   string
   homeBranchId: string
-  shift: ShiftType
+  shift:        ShiftType
 }
 
 export interface VacationWeek {
-  id: string
+  id:         string
   employeeId: string
-  weekStart: string // ISO Sunday
+  weekStart:  string // ISO Sunday
 }
 
 export interface AIConfig {
-  startDate: string
-  weeks: number
-  empConfigs: EmployeeAIConfig[]
-  vacations: VacationWeek[]
-  visitCounts: Record<string, number>
+  startDate:    string
+  weeks:        number
+  empConfigs:   EmployeeAIConfig[]
+  vacations:    VacationWeek[]
+  visitCounts:  Record<string, number>
   autoVacation: boolean
 }
 
 export interface AIWarning {
-  date: string
-  branchId: string
-  branchNameAr: string
-  need: number
-  got: number
+  date:        string
+  branchId:    string
+  branchNameAr:string
+  need:        number
+  got:         number
 }
 
 export interface WeekVisitInfo {
-  weekStart: string
-  employee: Employee
-  empType: EmployeeType
+  weekStart:  string
+  employee:   Employee
+  empType:    EmployeeType
 }
 
 export interface AIResult {
-  entries: ScheduleInput[]
-  warnings: AIWarning[]
-  visitCounts: Record<string, number>
-  weekVisits: WeekVisitInfo[]
-  autoVacationsAdded: VacationWeek[]
+  entries:             ScheduleInput[]
+  warnings:            AIWarning[]
+  visitCounts:         Record<string, number>
+  weekVisits:          WeekVisitInfo[]
+  autoVacationsAdded:  VacationWeek[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -194,17 +178,16 @@ function getSunday(iso: string): string {
 }
 
 // ── Auto vacation balancer ────────────────────────────────────────────────────
-
 export function autoAssignVacations(
   agents: Employee[],
   existingVacations: VacationWeek[],
   startDate: string,
   weeks: number,
 ): VacationWeek[] {
-  const added: VacationWeek[] = []
-  const allSundays    = Array.from({ length: weeks }, (_, i) => addDays(startDate, i * 7))
-  const periodStart   = startDate
-  const periodEnd     = addDays(startDate, weeks * 7 - 1)
+  const added: VacationWeek[]  = []
+  const allSundays             = Array.from({ length: weeks }, (_, i) => addDays(startDate, i * 7))
+  const periodStart            = startDate
+  const periodEnd              = addDays(startDate, weeks * 7 - 1)
 
   const coveredEmpIds = new Set(
     existingVacations
@@ -218,9 +201,8 @@ export function autoAssignVacations(
   const weekLoad: Record<string, number> = {}
   for (const sun of allSundays) weekLoad[sun] = 0
   for (const v of existingVacations) {
-    if (allSundays.includes(v.weekStart)) {
+    if (allSundays.includes(v.weekStart))
       weekLoad[v.weekStart] = (weekLoad[v.weekStart] ?? 0) + 1
-    }
   }
 
   const maxPerWeek = Math.ceil((needVacation.length + existingVacations.length) / weeks) + 1
@@ -241,7 +223,6 @@ export function autoAssignVacations(
 }
 
 // ── Main generator ────────────────────────────────────────────────────────────
-
 export function generateAISchedule(
   employees: Employee[],
   branches: Branch[],
@@ -255,14 +236,14 @@ export function generateAISchedule(
   const brMap  = new Map(branches.map(b => [b.id, b]))
   const cfgMap = new Map(config.empConfigs.map(c => [c.employeeId, c]))
 
-  // Eligible = all south employees who are not supervisors
-  const eligible  = employees.filter(e =>
+  // eligible = all south non-supervisors
+  const eligible = employees.filter(e =>
     e.role !== 'Supervisor' && (e.region ?? 'south') === 'south',
   )
-  const agents    = eligible.filter(e => e.role === 'Agent')
-  const ibsAgents = agents.filter(e => classifyEmp(e) === 'IBS')
+  // agents = regular employees (role Agent). Seniors (role Senior) are separate.
+  const agents  = eligible.filter(e => e.role === 'Agent')
+  const seniors = eligible.filter(e => e.role === 'Senior')
 
-  // Home branch lookup
   function getHome(emp: Employee): string {
     return cfgMap.get(emp.id)?.homeBranchId
       ?? DEFAULT_HOME_BRANCHES[emp.id]
@@ -270,41 +251,27 @@ export function generateAISchedule(
       ?? 'br-05'
   }
 
-  // ── Auto-vacation ───────────────────────────────────────────────────────────
-  let allVacations           = [...config.vacations]
-  let autoVacationsAdded: VacationWeek[] = []
-  if (config.autoVacation) {
-    autoVacationsAdded = autoAssignVacations(
-      agents, config.vacations, config.startDate, config.weeks,
-    )
-    allVacations = [...allVacations, ...autoVacationsAdded]
+  // ── Shift calibration from reference date ───────────────────────────────────
+  const schedStartSun = getSunday(config.startDate)
+  const weeksFromRef  = Math.round(
+    (new Date(schedStartSun + 'T00:00:00').getTime() -
+     new Date(REFERENCE_DATE + 'T00:00:00').getTime()) / (7 * 86400000),
+  )
+
+  function baseShift(empId: string): ShiftType {
+    // User-configured shift takes priority (it IS the shift for week-0 of THIS schedule)
+    const configured = cfgMap.get(empId)?.shift
+    if (configured) return configured
+    // Derive from reference
+    const refBase: ShiftType = REFERENCE_WEEK2_GROUP.has(empId) ? 'B' : 'A'
+    return ((refBase === 'A' ? 0 : 1) + weeksFromRef) % 2 === 0 ? 'A' : 'B'
   }
 
-  // Build vacation-day lookup: "empId:date" → true
-  const vacDays = new Set<string>()
-  for (const v of allVacations) {
-    // Vacation weeks run Mon–Fri (5 working days inside the Sun-starting week)
-    for (let i = 1; i <= 5; i++) {
-      const d = addDays(v.weekStart, i)
-      vacDays.add(`${v.employeeId}:${d}`)
-      entries.push({
-        employeeId: v.employeeId,
-        date:       d,
-        cellType:   'annual',
-        note:       autoVacationsAdded.some(a => a.id === v.id)
-          ? 'AI — إجازة سنوية (تلقائي)'
-          : 'AI — إجازة سنوية',
-      })
-    }
-  }
-
-  // ── Shift helper: 'A' starts on WEEK1, 'B' starts on WEEK2 ────────────────
   function empShift(empId: string, weekOffset: number): ShiftType {
-    const base = cfgMap.get(empId)?.shift ?? 'A'
+    const base = baseShift(empId)
     return ((base === 'A' ? 0 : 1) + weekOffset) % 2 === 0 ? 'A' : 'B'
   }
 
-  // Is this a working day for this employee in this week-offset?
   function isWorkDay(empId: string, date: string, weekOffset: number): boolean {
     const d = dow(date)
     if (empId === SENIOR_MALLAWY)  return SENIOR_MALLAWY_DAYS.has(d)
@@ -317,14 +284,44 @@ export function generateAISchedule(
     return !vacDays.has(`${empId}:${date}`)
   }
 
-  // ── Visit pools (rotation employees not at small branches) ─────────────────
-  const visitPool = agents.filter(e =>
-    !SMALL_BRANCHES.has(getHome(e)) && !DEDICATED_IDS.has(e.id),
-  )
+  // ── Auto-vacation ───────────────────────────────────────────────────────────
+  let allVacations: VacationWeek[] = [...config.vacations]
+  let autoVacationsAdded: VacationWeek[] = []
+  if (config.autoVacation) {
+    autoVacationsAdded = autoAssignVacations(
+      agents, config.vacations, config.startDate, config.weeks,
+    )
+    allVacations = [...allVacations, ...autoVacationsAdded]
+  }
+
+  // Vacation day lookup — covers the employee's actual working days that week
+  const vacDays = new Set<string>()
+  for (const v of allVacations) {
+    for (let i = 0; i < 7; i++) {
+      const d        = addDays(v.weekStart, i)
+      const wOffset  = Math.round(
+        (new Date(getSunday(d) + 'T00:00:00').getTime() -
+         new Date(schedStartSun + 'T00:00:00').getTime()) / (7 * 86400000),
+      )
+      if (isWorkDay(v.employeeId, d, wOffset)) {
+        vacDays.add(`${v.employeeId}:${d}`)
+        entries.push({
+          employeeId: v.employeeId,
+          date:       d,
+          cellType:   'annual',
+          note:       autoVacationsAdded.some(a => a.id === v.id)
+            ? 'AI — إجازة سنوية (تلقائي)'
+            : 'AI — إجازة سنوية',
+        })
+      }
+    }
+  }
+
+  // ── Visit pool: regular agents not dedicated to small branches ──────────────
+  const visitPool = agents.filter(e => !SMALL_BRANCHES.has(getHome(e)))
   const weVisit   = visitPool.filter(e => classifyEmp(e) === 'WE')
   const ibsVisit  = visitPool.filter(e => classifyEmp(e) === 'IBS')
 
-  // Round-robin visit selector: WE:IBS ≈ 2:1
   const usedAsVisit = new Set<string>()
   function pickVisit(): Employee | null {
     const weTotal  = weVisit.reduce((s, e)  => s + (visitCounts[e.id]  ?? 0), 0)
@@ -332,9 +329,10 @@ export function generateAISchedule(
     const pickWE   = ibsTotal === 0 || weTotal / Math.max(ibsTotal, 1) < 2
     const pool     = (pickWE ? weVisit : ibsVisit).filter(e => !usedAsVisit.has(e.id))
     if (!pool.length) return null
-    return pool.reduce((best, e) =>
-      (visitCounts[e.id] ?? 0) < (visitCounts[best.id] ?? 0) ? e : best,
-    )
+    // Among candidates with equal min visit count, pick randomly for variety
+    const minCount = Math.min(...pool.map(e => visitCounts[e.id] ?? 0))
+    const tied     = pool.filter(e => (visitCounts[e.id] ?? 0) === minCount)
+    return tied[Math.floor(Math.random() * tied.length)]
   }
 
   // ── Week loop ───────────────────────────────────────────────────────────────
@@ -349,7 +347,6 @@ export function generateAISchedule(
     const pairBr05   = swapped ? SENIORS_MINYA_B : SENIORS_MINYA_A
     const pairBr06   = swapped ? SENIORS_MINYA_A : SENIORS_MINYA_B
 
-    // Visit employee for this week
     const visitEmp = pickVisit()
     if (visitEmp) {
       usedAsVisit.add(visitEmp.id)
@@ -360,26 +357,27 @@ export function generateAISchedule(
     // ── Daily loop ────────────────────────────────────────────────────────────
     for (const date of dates) {
       const d = dow(date)
-      // usedToday tracks all employees given an assignment entry today
+      // usedToday = seniors + visit (pre-placed, do NOT count toward quota)
       const usedToday       = new Set<string>()
-      // todayBranchCount tracks how many employees are placed at each branch today
+      // todayBranchCount = ONLY regular-agent placements (quota tracking)
       const todayBranchCount = new Map<string, number>()
 
-      function placeAt(empId: string, brId: string, entry: ScheduleInput) {
+      // Pre-place without touching todayBranchCount
+      function prePlace(empId: string, entry: ScheduleInput) {
         entries.push(entry)
         usedToday.add(empId)
-        if (brId) todayBranchCount.set(brId, (todayBranchCount.get(brId) ?? 0) + 1)
       }
 
       // ── 1. Visit employee ─────────────────────────────────────────────────
       if (visitEmp && isWorkDay(visitEmp.id, date, w) && isAvailable(visitEmp.id, date)) {
-        entries.push({ employeeId: visitEmp.id, date, cellType: 'visit', note: 'AI — زيارة خارجية' })
-        usedToday.add(visitEmp.id)
+        prePlace(visitEmp.id, {
+          employeeId: visitEmp.id, date, cellType: 'visit', note: 'AI — زيارة خارجية',
+        })
       }
 
-      // ── 2. Senior Mallawy — fixed ملوي, Sun–Thu ───────────────────────────
+      // ── 2. Senior Mallawy — br-01, Sun–Thu ───────────────────────────────
       if (SENIOR_MALLAWY_DAYS.has(d) && isAvailable(SENIOR_MALLAWY, date)) {
-        placeAt(SENIOR_MALLAWY, 'br-01', {
+        prePlace(SENIOR_MALLAWY, {
           employeeId: SENIOR_MALLAWY, branchId: 'br-01', date, cellType: 'branch',
           startTime: '09:00', endTime: '21:00', note: 'AI — سينيور ملوي',
         })
@@ -387,105 +385,112 @@ export function generateAISchedule(
 
       // ── 3. Minya rotating seniors ─────────────────────────────────────────
       for (const sid of pairBr05) {
-        if (isWorkDay(sid, date, w) && isAvailable(sid, date)) {
-          placeAt(sid, 'br-05', {
-            employeeId: sid, branchId: 'br-05', date, cellType: 'branch',
-            startTime: '09:00', endTime: '21:00', note: 'AI — سينيور المنيا',
-          })
-        }
+        if (isWorkDay(sid, date, w) && isAvailable(sid, date))
+          prePlace(sid, { employeeId: sid, branchId: 'br-05', date, cellType: 'branch', startTime: '09:00', endTime: '21:00', note: 'AI — سينيور المنيا' })
       }
       for (const sid of pairBr06) {
-        if (isWorkDay(sid, date, w) && isAvailable(sid, date)) {
-          placeAt(sid, 'br-06', {
-            employeeId: sid, branchId: 'br-06', date, cellType: 'branch',
-            startTime: '09:00', endTime: '21:00', note: 'AI — سينيور المنيا الجديدة',
-          })
+        if (isWorkDay(sid, date, w) && isAvailable(sid, date))
+          prePlace(sid, { employeeId: sid, branchId: 'br-06', date, cellType: 'branch', startTime: '09:00', endTime: '21:00', note: 'AI — سينيور المنيا الجديدة' })
+      }
+
+      // ── 4. Regular agents: home-branch assignment ─────────────────────────
+      // dayAssignment: empId → branchId (working) | null (off)
+      const dayAssignment = new Map<string, string | null>()
+
+      for (const agent of agents) {
+        if (usedToday.has(agent.id)) continue         // on visit duty
+        if (vacDays.has(`${agent.id}:${date}`)) continue // on vacation
+
+        const homeId = getHome(agent)
+
+        // Small branches are closed Friday
+        if (SMALL_BRANCHES.has(homeId) && !SMALL_OPEN.has(d)) {
+          dayAssignment.set(agent.id, null)
+          continue
+        }
+
+        if (isWorkDay(agent.id, date, w)) {
+          dayAssignment.set(agent.id, homeId)
+          todayBranchCount.set(homeId, (todayBranchCount.get(homeId) ?? 0) + 1)
+        } else {
+          dayAssignment.set(agent.id, null) // off day
         }
       }
 
-      // ── 4. Dedicated small-branch employees ───────────────────────────────
-      // emp-26→br-03, emp-41→br-07, emp-22→br-08 work every Sat–Thu
-      for (const [empId, brId] of Object.entries(DEDICATED_MAP)) {
-        if (SMALL_OPEN.has(d) && isAvailable(empId, date)) {
-          const br = brMap.get(brId)
-          placeAt(empId, brId, {
-            employeeId: empId, branchId: brId, date, cellType: 'branch',
-            startTime: '09:00', endTime: '16:00',
-            note: `AI — ${br?.storeNameAr ?? brId}`,
-          })
-        }
-      }
-
-      // ── 5. Branch assignments in geographic order south → north ───────────
+      // ── 5. Gap fixer — cover branches short of their minimum ──────────────
+      // Only runs when vacation / visit empties a branch. Uses surplus agents
+      // from over-staffed branches (random tiebreaking for schedule variety).
       for (const brId of GEO_ORDER) {
-        const [min, max, ibsOnly] = BRANCH_NEEDS[brId] ?? [1, 1, false]
+        const [min,, ibsOnly] = BRANCH_NEEDS[brId] ?? [1, 1, false]
         const isSmall = SMALL_BRANCHES.has(brId)
-
-        // Small branches closed on Friday
         if (isSmall && !SMALL_OPEN.has(d)) continue
 
-        // Count pre-placed employees (seniors, dedicated) already at this branch
-        let placed = todayBranchCount.get(brId) ?? 0
+        const currentCount = () => todayBranchCount.get(brId) ?? 0
+        if (currentCount() >= min) continue
 
-        if (placed >= max) continue // already full
+        const needed = min - currentCount()
+        for (let n = 0; n < needed; n++) {
+          // Find agents at over-staffed branches, nearest to this branch
+          const movable = agents
+            .filter(e => {
+              const assignedBr = dayAssignment.get(e.id)
+              if (!assignedBr || assignedBr === brId) return false
+              if (ibsOnly && classifyEmp(e) === 'WE') return false
+              const [brMin] = BRANCH_NEEDS[assignedBr] ?? [1, 1, false]
+              return (todayBranchCount.get(assignedBr) ?? 0) > brMin
+            })
 
-        // Build candidate pool — exclude dedicated employees from all branches
-        // (they're already pre-placed at their own branch or on vacation)
-        const candidatePool = (ibsOnly ? ibsAgents : agents)
-          .filter(e =>
-            !usedToday.has(e.id) &&
-            !DEDICATED_IDS.has(e.id) &&
-            isAvailable(e.id, date) &&
-            isWorkDay(e.id, date, w),
-          )
-          .sort((a, b) => {
+          if (!movable.length) break // No surplus anywhere — accept the gap
+
+          // Sort by geographic distance; randomise ties for proposal variety
+          movable.sort((a, b) => {
             const da = geoDist(getHome(a), brId)
             const db = geoDist(getHome(b), brId)
-            if (da !== db) return da - db
-            // Tie-break: prefer home-branch employees
-            return (getHome(a) === brId ? -1 : 0) - (getHome(b) === brId ? -1 : 0)
+            return da !== db ? da - db : Math.random() - 0.5
           })
 
-        for (const emp of candidatePool) {
-          if (placed >= max) break
-          placeAt(emp.id, brId, {
-            employeeId: emp.id, branchId: brId, date, cellType: 'branch',
+          const emp    = movable[0]
+          const oldBr  = dayAssignment.get(emp.id)!
+          dayAssignment.set(emp.id, brId)
+          todayBranchCount.set(oldBr, Math.max(0, (todayBranchCount.get(oldBr) ?? 1) - 1))
+          todayBranchCount.set(brId,  (todayBranchCount.get(brId) ?? 0) + 1)
+        }
+
+        if (currentCount() < min) {
+          const br = brMap.get(brId)
+          warnings.push({
+            date, branchId: brId,
+            branchNameAr: br?.storeNameAr ?? brId,
+            need: min, got: currentCount(),
+          })
+        }
+      }
+
+      // ── 6. Flush dayAssignment → entries ──────────────────────────────────
+      for (const [empId, brId] of dayAssignment.entries()) {
+        if (brId === null) {
+          entries.push({ employeeId: empId, date, cellType: 'off', note: 'راحة' })
+        } else {
+          const isSmall = SMALL_BRANCHES.has(brId)
+          entries.push({
+            employeeId: empId, branchId: brId, date, cellType: 'branch',
             startTime: '09:00', endTime: isSmall ? '16:00' : '21:00',
             note: 'AI Generated',
           })
-          placed++
-        }
-
-        if (placed < min) {
-          const br = brMap.get(brId)
-          warnings.push({
-            date,
-            branchId:    brId,
-            branchNameAr: br?.storeNameAr ?? brId,
-            need: min,
-            got:  placed,
-          })
         }
       }
 
-      // ── 6. Generate 'off' entries for non-working employees ───────────────
-      // Covers all south agents + handled seniors for their rest days
-      const allTracked = [
-        ...agents,
-        ...ALL_SENIORS_MINYA.map(id => employees.find(e => e.id === id)).filter(Boolean) as Employee[],
+      // ── 7. Off entries for seniors on their rest days ─────────────────────
+      const allSeniors = [
+        ...seniors,
         employees.find(e => e.id === SENIOR_MALLAWY),
       ].filter(Boolean) as Employee[]
 
-      for (const emp of allTracked) {
-        if (usedToday.has(emp.id)) continue       // already assigned
-        if (vacDays.has(`${emp.id}:${date}`)) continue  // on vacation
-        if (!isWorkDay(emp.id, date, w)) {
-          entries.push({
-            employeeId: emp.id,
-            date,
-            cellType:   'off',
-            note:       'راحة',
-          })
+      for (const sen of allSeniors) {
+        if (usedToday.has(sen.id)) continue
+        if (vacDays.has(`${sen.id}:${date}`)) continue
+        if (!isWorkDay(sen.id, date, w)) {
+          entries.push({ employeeId: sen.id, date, cellType: 'off', note: 'راحة' })
         }
       }
     }
@@ -507,9 +512,8 @@ export function inferShift(
   if (!workEntries.length) return 'A'
 
   const lastDate  = workEntries[0].date
-  const d         = dow(lastDate)
-  // If last worked on a WEEK1 day (Sun/Mon/Thu/Fri/Sat) → was on WEEK1 → shift A that week
-  const wasWeek1  = WEEK1_DAYS.has(d)
+  const lastD     = dow(lastDate)
+  const wasWeek1  = WEEK1_DAYS.has(lastD)
   const lastSun   = getSunday(lastDate)
   const startSun  = getSunday(beforeDate)
   const weekDiff  = Math.round(
