@@ -1,20 +1,9 @@
 const PREFIX = 'we-ts-'
-const STORAGE_VERSION = '4'
-const VERSION_KEY = 'we-ts-version'
-
-// Force-clear all keys when storage schema changes (e.g. after removing br-09)
-;(() => {
-  if (typeof localStorage === 'undefined') return
-  if (localStorage.getItem(VERSION_KEY) !== STORAGE_VERSION) {
-    const toRemove: string[] = []
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i)
-      if (k && k.startsWith(PREFIX)) toRemove.push(k)
-    }
-    toRemove.forEach(k => localStorage.removeItem(k))
-    localStorage.setItem(VERSION_KEY, STORAGE_VERSION)
-  }
-})()
+// NOTE: Do NOT add auto-clear logic here.
+// Changing a version number used to wipe all user data (schedules, configs, etc.)
+// on every new deployment. Data is stored in the user's browser localStorage and
+// must NEVER be erased by a deployment. If a schema migration is ever needed,
+// write a targeted migration that transforms data — never a blanket wipe.
 
 export const storage = {
   get<T>(key: string, fallback: T): T {
