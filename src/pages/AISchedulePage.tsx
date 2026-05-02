@@ -7,12 +7,12 @@ import {
 import { useSchedule } from '@/hooks/useSchedule'
 import { storage } from '@/lib/storage'
 import {
-  generateAISchedule, classifyEmp, autoStaggerOffsets,
+  generateAISchedule, classifyEmp, inferShift,
   GEO_ORDER, SENIOR_MALLAWY, ALL_SENIORS_MINYA,
   DEFAULT_HOME_BRANCHES, autoAssignVacations,
 } from '@/lib/scheduleAI'
 import type {
-  EmployeeAIConfig, VacationWeek, AIConfig, AIResult, AIWarning,
+  EmployeeAIConfig, VacationWeek, AIConfig, AIResult, AIWarning, ShiftType,
 } from '@/lib/scheduleAI'
 import type { Employee } from '@/types/hr'
 import type { ScheduleInput } from '@/hooks/useSchedule'
@@ -136,21 +136,19 @@ export default function AISchedulePage() {
 
   // ── Persisted emp configs ──────────────────────────────────────────────────
   const [empConfigs, setEmpConfigs] = useState<EmployeeAIConfig[]>(() => {
-    const saved      = storage.get<EmployeeAIConfig[]>(KEY_EMPCFG, [])
-    const savedMap   = new Map(saved.map(c => [c.employeeId, c]))
-    // Auto-stagger: distribute offsets 0–6 across agents sorted by geo order
-    const agents     = eligible.filter(e => e.role === 'Agent')
-    const autoOffsets = autoStaggerOffsets(
-      agents,
-      e => DEFAULT_HOME_BRANCHES[e.id] ?? e.branchId ?? 'br-05',
-    )
+    const saved    = storage.get<EmployeeAIConfig[]>(KEY_EMPCFG, [])
+    const savedMap = new Map(saved.map(c => [c.employeeId, c]))
     return eligible.map(emp => {
       const existing = savedMap.get(emp.id)
-      if (existing && 'cycleOffset' in existing) return existing
+      // دعم التوافق مع الإصدار القديم (cycleOffset) وإعادة بناء shift
+      const shift: ShiftType =
+        existing && 'shift' in existing && (existing.shift === 'A' || existing.shift === 'B')
+          ? existing.shift as ShiftType
+          : inferShift(emp.id)
       return {
         employeeId:   emp.id,
-        homeBranchId: DEFAULT_HOME_BRANCHES[emp.id] ?? emp.branchId ?? 'br-05',
-        cycleOffset:  autoOffsets.get(emp.id) ?? 0,
+        homeBranchId: existing?.homeBranchId ?? DEFAULT_HOME_BRANCHES[emp.id] ?? emp.branchId ?? 'br-05',
+        shift,
       }
     })
   })
@@ -346,16 +344,16 @@ export default function AISchedulePage() {
           </div>
         </button>
 
-        {/* Cycle info */}
+        {/* Shift info */}
         <div
           className="mt-3 rounded-xl p-3 flex gap-2"
           style={{ background: 'rgba(107,33,168,0.1)', border: '1px solid rgba(192,132,252,0.15)' }}
         >
           <Info size={14} className="flex-shrink-0 mt-0.5" color="#C084FC" />
           <div className="text-xs space-y-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
-            <p><strong style={{ color: '#C084FC' }}>نظام 5+2 يومي:</strong> كل موظف يشتغل 5 أيام متتالية ثم يأخذ 2 راحة</p>
-            <p>الموظفين متفاوتين في أيام الراحة حتى تكون التغطية اليومية مستمرة</p>
-            <p style={{ color: 'rgba(255,255,255,0.3)' }}>يمكن تعديل أيام الراحة لكل موظف من إعدادات الموظفين أدناه</p>
+            <p><strong style={{ color: '#C084FC' }}>شيفت A (أسبوع 1):</strong> سبت + ثلاثاء + أربعاء</p>
+            <p><strong style={{ color: '#FCD34D' }}>شيفت B (أسبوع 1):</strong> أحد + اثنين + خميس + جمعة</p>
+            <p style={{ color: 'rgba(255,255,255,0.3)' }}>الأسبوع 2: يتعكسان — الترتيب: فروع صغيرة ← دير/جديدة ← ملوي/أبوقرقاص ← فيزيت ← المنيا</p>
           </div>
         </div>
       </SectionCard>
@@ -455,7 +453,7 @@ export default function AISchedulePage() {
       {/* ── 3. Employee configs ──────────────────────────────────────────── */}
       <SectionCard title="إعدادات الموظفين" icon={Users} defaultOpen={false}>
         <p className="text-xs mb-4" style={{ color: 'rgba(255,255,255,0.35)' }}>
-          الفرع الأساسي لكل موظف (للتوزيع الجغرافي) وأيام الراحة في دورة 5+2
+          الفرع الأساسي لكل موظف وشيفت البداية (A أو B) — يتعكسان كل أسبوع
         </p>
 
         {/* Agents */}
@@ -489,9 +487,9 @@ export default function AISchedulePage() {
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
                 </select>
-                <CycleOffsetSelect
-                  value={cfg.cycleOffset ?? 0}
-                  onChange={o => updateEmpCfg(cfg.employeeId, { cycleOffset: o })}
+                <ShiftToggle
+                  value={cfg.shift ?? 'A'}
+                  onChange={s => updateEmpCfg(cfg.employeeId, { shift: s })}
                 />
               </div>
             )
@@ -527,9 +525,9 @@ export default function AISchedulePage() {
                   {isMallawy ? 'ملوي ثابت' : isMinya ? 'دوري المنيا' : 'سينيور'}
                 </span>
                 {!isMallawy && (
-                  <CycleOffsetSelect
-                    value={cfg.cycleOffset ?? 0}
-                    onChange={o => updateEmpCfg(cfg.employeeId, { cycleOffset: o })}
+                  <ShiftToggle
+                    value={cfg.shift ?? 'A'}
+                    onChange={s => updateEmpCfg(cfg.employeeId, { shift: s })}
                   />
                 )}
                 {isMallawy && (
@@ -741,12 +739,12 @@ export default function AISchedulePage() {
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-y-1.5 gap-x-6">
           {[
-            ['🔄', 'نظام 5+2 يومي — كل موظف: 5 أيام شغل + 2 راحة متناوبة'],
-            ['🏠', 'كل موظف يبدأ من فرعه الأساسي، ويتحرك فقط لو في نقص'],
+            ['1️⃣', 'دلجا + بني أحمد + صفط: IBS ثابت، سبت–خميس، 9→16'],
+            ['2️⃣', 'دير مواس + المنيا الجديدة: 1 يومياً، شيفتان أسبوعياً'],
+            ['3️⃣', 'ملوي + أبوقرقاص: 2 يومياً، شيفتان، تعويض من الأقرب'],
+            ['4️⃣', 'الفيزيت: أسبوع كامل أحد–خميس، WE ضعف IBS (2:1)'],
+            ['5️⃣', 'المنيا: تستوعب كل الفائض، 2 وكلاء كحد أدنى يومياً'],
             ['🔁', 'السينيورز خارج الحساب — دوران شهري بين المنيا والجديدة'],
-            ['👁',  'زيارة خارجية يومية: موظف واحد من المنيا، دوار بالتساوي'],
-            ['🏢', 'دلجا + بني أحمد + صفط: موظف IBS مخصص كل يوم، 9→16'],
-            ['🏖', 'كل موظف يأخذ أسبوع إجازة كل ربع سنة تلقائياً'],
           ].map(([icon, text]) => (
             <div key={text as string} className="flex items-center gap-2">
               <span className="text-sm">{icon}</span>
@@ -909,35 +907,28 @@ function AIPreviewMatrix({
   )
 }
 
-// ── Cycle offset selector ─────────────────────────────────────────────────────
-// Maps offset 0–6 to Arabic off-day pair labels (assuming schedule starts Sunday)
+// ── Shift toggle (A / B) ──────────────────────────────────────────────────────
 
-const CYCLE_LABELS: string[] = [
-  'راحة: جمعة+سبت',    // 0
-  'راحة: خميس+جمعة',   // 1
-  'راحة: أربع+خميس',   // 2
-  'راحة: ثلاث+أربع',   // 3
-  'راحة: اثنين+ثلاث',  // 4
-  'راحة: أحد+اثنين',   // 5
-  'راحة: سبت+أحد',     // 6
-]
-
-function CycleOffsetSelect({ value, onChange }: { value: number; onChange: (o: number) => void }) {
+function ShiftToggle({ value, onChange }: { value: ShiftType; onChange: (s: ShiftType) => void }) {
   return (
-    <select
-      value={value}
-      onChange={e => onChange(Number(e.target.value))}
-      className="rounded-lg px-2 py-1 text-[10px] font-semibold outline-none flex-shrink-0"
-      style={{
-        background: 'rgba(107,33,168,0.18)',
-        color: '#C084FC',
-        border: '1px solid rgba(192,132,252,0.25)',
-        minWidth: 110,
-      }}
-    >
-      {CYCLE_LABELS.map((label, i) => (
-        <option key={i} value={i}>{label}</option>
+    <div className="flex gap-1 flex-shrink-0">
+      {(['A', 'B'] as ShiftType[]).map(s => (
+        <button
+          key={s}
+          onClick={() => onChange(s)}
+          className="text-xs font-black px-2.5 py-1 rounded-lg transition-colors"
+          style={{
+            background: value === s
+              ? s === 'A' ? 'rgba(107,33,168,0.45)' : 'rgba(234,179,8,0.25)'
+              : 'rgba(255,255,255,0.05)',
+            color: value === s
+              ? s === 'A' ? '#C084FC' : '#FCD34D'
+              : 'rgba(255,255,255,0.28)',
+          }}
+        >
+          {s}
+        </button>
       ))}
-    </select>
+    </div>
   )
 }
