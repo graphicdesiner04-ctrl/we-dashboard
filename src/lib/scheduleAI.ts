@@ -9,8 +9,11 @@
 //   (السينيورز يُوضَعون أولاً خارج الحساب في كل خطوة)
 //
 // نظام الشيفت الأسبوعي:
-//   الأسبوع 1  →  شيفت A: سبت+ثلاث+أربع  |  شيفت B: أحد+اثنين+خميس+جمعة
-//   الأسبوع 2  →  يتعكسان (A يأخذ أيام B والعكس)
+//   ثقيل  = أحد + اثنين + خميس + جمعة  (4 أيام)
+//   خفيف  = سبت + ثلاثاء + أربعاء      (3 أيام)
+//   الأسبوع الزوجي  (0,2,4...):  B ثقيل — A خفيف
+//   الأسبوع الفردي  (1,3,5...):  A ثقيل — B خفيف
+//   في يوم الراحة (غير الخفيف): الموظف يأخذ "off" — لا يذهب للمنيا
 //
 // الفروع الصغيرة:
 //   موظف IBS ثابت، سبت–خميس، إجازة جمعة
@@ -50,31 +53,47 @@ const BRANCH_DEDICATED: Record<string, string> = Object.fromEntries(
 // ── نظام الشيفت ───────────────────────────────────────────────────────────────
 export type ShiftType = 'A' | 'B'
 
-// الأسبوع 1 (weekNum % 2 === 0)
-const SHIFT_A_WEEK1 = new Set([6, 2, 3])    // سبت(6) ثلاث(2) أربع(3)
-const SHIFT_B_WEEK1 = new Set([0, 1, 4, 5]) // أحد(0) اثنين(1) خميس(4) جمعة(5)
+// الأيام الثقيلة: أحد(0) + اثنين(1) + خميس(4) + جمعة(5)
+const HEAVY_DAYS = new Set([0, 1, 4, 5])
+// الأيام الخفيفة: سبت(6) + ثلاثاء(2) + أربعاء(3)
+const LIGHT_DAYS = new Set([6, 2, 3])
 
-// أيّ شيفت يعمل في هذا اليوم؟
-function getActiveShift(weekNum: number, d: number): ShiftType {
-  const isWeek1 = weekNum % 2 === 0
-  return isWeek1
-    ? (SHIFT_A_WEEK1.has(d) ? 'A' : 'B')
-    : (SHIFT_B_WEEK1.has(d) ? 'A' : 'B') // الأسبوع 2: يتعكسان
+// هل الموظف يعمل اليوم؟
+// الأسبوع الزوجي (0,2,4...): B ثقيل — A خفيف
+// الأسبوع الفردي (1,3,5...): A ثقيل — B خفيف
+export function isWorkDay(shift: ShiftType, weekNum: number, d: number): boolean {
+  const isEvenWeek = weekNum % 2 === 0
+  if (isEvenWeek) return shift === 'B' ? HEAVY_DAYS.has(d) : LIGHT_DAYS.has(d)
+  return shift === 'A' ? HEAVY_DAYS.has(d) : LIGHT_DAYS.has(d)
 }
 
-// شيفت افتراضي لكل موظف (يستخدم إن لم يُحدَّد يدوياً)
+// شيفت افتراضي لكل موظف — مأخوذ من جدول المرجع Schedule02.htm
 const DEFAULT_SHIFTS: Record<string, ShiftType> = {
-  // دير مواس — 1 موظف يومياً، 2 إجمالي
-  'emp-21': 'A', 'emp-38': 'B', 'emp-31': 'B',
-  // ملوي — 2 موظف يومياً، 3 إجمالي (ShiftB يحتاج دعم من المنيا)
-  'emp-24': 'A', 'emp-28': 'A', 'emp-23': 'B',
-  // أبوقرقاص — 2 يومياً، 4 إجمالي (متوازن)
-  'emp-34': 'A', 'emp-37': 'A', 'emp-30': 'B', 'emp-12': 'B',
-  // المنيا الجديدة — 1 يومياً، 2 إجمالي
-  'emp-36': 'A', 'emp-25': 'B',
-  // المنيا — يتناوبون A/B
-  'emp-27': 'A', 'emp-19': 'B', 'emp-20': 'A', 'emp-29': 'B',
-  'emp-32': 'A', 'emp-33': 'B', 'emp-18': 'A', 'emp-39': 'B',
+  // دير مواس br-02 — 3 موظفين A
+  'emp-21': 'A', // 236311
+  'emp-38': 'A', // 251614
+  'emp-31': 'A', // 9071
+  // ملوي br-01 — 1A + 3B
+  'emp-24': 'A', // 216859
+  'emp-28': 'B', // 8256
+  'emp-34': 'B', // 7849
+  'emp-23': 'B', // 8474
+  // أبوقرقاص br-04 — 2A + 4B
+  'emp-30': 'A', // 9070
+  'emp-37': 'A', // 331230
+  'emp-32': 'B', // 9072
+  'emp-12': 'B', // 8287
+  'emp-29': 'B', // 217432
+  'emp-18': 'B', // 165124
+  // المنيا الجديدة br-06 — 1A + 1B
+  'emp-36': 'A', // 8141
+  'emp-25': 'B', // 277026
+  // المنيا br-05
+  'emp-27': 'A', // 165419
+  'emp-19': 'A', // 7702
+  'emp-20': 'A', // 7703
+  'emp-33': 'B', // 239015
+  'emp-39': 'A', // 355561
 }
 
 export function inferShift(empId: string): ShiftType {
@@ -94,15 +113,16 @@ const SENIOR_MALLAWY_DAYS = new Set([0, 1, 2, 3, 4])
 
 // ── الفروع الأساسية ───────────────────────────────────────────────────────────
 export const DEFAULT_HOME_BRANCHES: Record<string, string> = {
-  'emp-26': 'br-03',
-  'emp-21': 'br-02', 'emp-38': 'br-02', 'emp-31': 'br-02',
-  'emp-24': 'br-01', 'emp-28': 'br-01', 'emp-23': 'br-01',
-  'emp-34': 'br-04', 'emp-30': 'br-04', 'emp-37': 'br-04', 'emp-12': 'br-04',
-  'emp-41': 'br-07',
-  'emp-22': 'br-08',
-  'emp-27': 'br-05', 'emp-19': 'br-05', 'emp-20': 'br-05', 'emp-29': 'br-05',
-  'emp-32': 'br-05', 'emp-33': 'br-05', 'emp-18': 'br-05', 'emp-39': 'br-05',
-  'emp-36': 'br-06', 'emp-25': 'br-06',
+  'emp-26': 'br-03',                                                            // دلجا
+  'emp-21': 'br-02', 'emp-38': 'br-02', 'emp-31': 'br-02',                    // دير مواس
+  'emp-24': 'br-01', 'emp-28': 'br-01', 'emp-34': 'br-01', 'emp-23': 'br-01', // ملوي
+  'emp-30': 'br-04', 'emp-37': 'br-04', 'emp-32': 'br-04', 'emp-12': 'br-04', // أبوقرقاص
+  'emp-29': 'br-04', 'emp-18': 'br-04',                                        // أبوقرقاص (مرنون)
+  'emp-41': 'br-07',                                                            // بني أحمد
+  'emp-22': 'br-08',                                                            // صفط
+  'emp-27': 'br-05', 'emp-19': 'br-05', 'emp-20': 'br-05',                    // المنيا
+  'emp-33': 'br-05', 'emp-39': 'br-05',                                        // المنيا
+  'emp-36': 'br-06', 'emp-25': 'br-06',                                        // المنيا الجديدة
 }
 
 // ── أنواع البيانات ────────────────────────────────────────────────────────────
@@ -324,7 +344,6 @@ export function generateAISchedule(
     const date    = addDays(config.startDate, dayIdx)
     const d       = dow(date)
     const weekNum = Math.floor(dayIdx / 7)
-    const active  = getActiveShift(weekNum, d)  // الشيفت النشط اليوم
 
     const usedToday = new Set<string>()
 
@@ -335,6 +354,9 @@ export function generateAISchedule(
 
     const isVac  = (id: string) => vacDays.has(`${id}:${date}`)
     const avail  = (id: string) => !usedToday.has(id) && !isVac(id)
+
+    // الفيزيت هذا الأسبوع
+    const visitId = weeklyVisitEmp.get(weekNum)
 
     // ══ سينيورز — خارج الحساب ══════════════════════════════════════════════════
 
@@ -358,6 +380,19 @@ export function generateAISchedule(
     for (const sid of pairBr06)
       if (avail(sid))
         push(sid, { employeeId: sid, branchId: 'br-06', date, cellType: 'branch', startTime: '09:00', endTime: '21:00', note: 'AI — سينيور المنيا الجديدة' })
+
+    // ══ ما قبل الخطوات: تمييز أيام الراحة ═════════════════════════════════════
+    // كل وكيل لا يعمل اليوم (حسب شيفته وأسبوعه) يأخذ "راحة"
+    // استثناءات: موظفو الفروع الصغيرة (جدولهم مختلف) + موظف الفيزيت (أحد-خميس)
+
+    for (const agent of agents) {
+      if (!avail(agent.id)) continue                       // إجازة سنوية
+      if (DEDICATED_IDS.has(agent.id)) continue            // الفروع الصغيرة تُدار في الخطوة 1
+      if (agent.id === visitId && d <= 4) continue         // فيزيت: يعمل كامل أحد-خميس
+      if (!isWorkDay(getShift(agent.id), weekNum, d)) {
+        push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة' })
+      }
+    }
 
     // ══ الخطوة 1: الفروع الصغيرة ═══════════════════════════════════════════════
 
@@ -403,37 +438,23 @@ export function generateAISchedule(
     }
 
     // ══ الخطوة 2: دير مواس br-02 + المنيا الجديدة br-06 ══════════════════════
-    // كل فرع: موظف واحد يومياً من الشيفت النشط
+    // كل فرع: موظف واحد يومياً
+    // (الموظفون غير العاملين اليوم موجودون بالفعل في usedToday بعد خطوة الراحة)
 
     for (const brId of ['br-02', 'br-06'] as const) {
-      // 1. الشيفت النشط من نفس الفرع
-      const fromActive = agents.filter(e =>
-        getHome(e) === brId && getShift(e.id) === active && avail(e.id),
-      )
+      // 1. من نفس الفرع — العاملون اليوم فقط
+      const fromBranch = agents.filter(e => getHome(e) === brId && avail(e.id))
 
-      if (fromActive.length > 0) {
-        push(fromActive[0].id, {
-          employeeId: fromActive[0].id, branchId: brId, date,
+      if (fromBranch.length > 0) {
+        push(fromBranch[0].id, {
+          employeeId: fromBranch[0].id, branchId: brId, date,
           cellType: 'branch', startTime: '09:00', endTime: '21:00',
-          note: `AI — شيفت ${active}`,
+          note: `AI — شيفت ${getShift(fromBranch[0].id)}`,
         })
         continue
       }
 
-      // 2. تعويض: نفس الفرع شيفت مختلف
-      const fromOther = agents.filter(e =>
-        getHome(e) === brId && avail(e.id),
-      )
-      if (fromOther.length > 0) {
-        push(fromOther[0].id, {
-          employeeId: fromOther[0].id, branchId: brId, date,
-          cellType: 'branch', startTime: '09:00', endTime: '21:00',
-          note: 'AI — تعويض (نفس الفرع)',
-        })
-        continue
-      }
-
-      // 3. تعويض: أقرب فرع
+      // 2. تعويض: أقرب فرع متاح
       const nearest = agents
         .filter(e => avail(e.id))
         .sort((a, b) => {
@@ -455,43 +476,25 @@ export function generateAISchedule(
     }
 
     // ══ الخطوة 3: ملوي br-01 + أبوقرقاص br-04 ═════════════════════════════════
-    // كل فرع: موظفان يومياً من الشيفت النشط
+    // كل فرع: موظفان يومياً
 
     for (const brId of ['br-01', 'br-04'] as const) {
       const needed = 2
       let placed   = 0
 
-      // 1. الشيفت النشط من نفس الفرع
-      const fromActive = agents.filter(e =>
-        getHome(e) === brId && getShift(e.id) === active && avail(e.id),
-      )
-      for (const emp of fromActive) {
+      // 1. من نفس الفرع — العاملون اليوم فقط
+      const fromBranch = agents.filter(e => getHome(e) === brId && avail(e.id))
+      for (const emp of fromBranch) {
         if (placed >= needed) break
         push(emp.id, {
           employeeId: emp.id, branchId: brId, date,
           cellType: 'branch', startTime: '09:00', endTime: '21:00',
-          note: `AI — شيفت ${active}`,
+          note: `AI — شيفت ${getShift(emp.id)}`,
         })
         placed++
       }
 
-      // 2. تعويض: نفس الفرع شيفت مختلف (أولوية التعويض)
-      if (placed < needed) {
-        const fromOther = agents.filter(e =>
-          getHome(e) === brId && getShift(e.id) !== active && avail(e.id),
-        )
-        for (const emp of fromOther) {
-          if (placed >= needed) break
-          push(emp.id, {
-            employeeId: emp.id, branchId: brId, date,
-            cellType: 'branch', startTime: '09:00', endTime: '21:00',
-            note: 'AI — تعويض (نفس الفرع)',
-          })
-          placed++
-        }
-      }
-
-      // 3. تعويض: أقرب فرع (ليس مخصص لفرع آخر بالفعل)
+      // 2. تعويض: أقرب فرع متاح (ليس مخصص لفرع صغير)
       if (placed < needed) {
         const nearest = agents
           .filter(e => avail(e.id) && !DEDICATED_IDS.has(e.id) && !SMALL_BRANCHES.has(getHome(e)))
@@ -519,7 +522,6 @@ export function generateAISchedule(
 
     // ══ الخطوة 4: الفيزيت (أحد → خميس) ════════════════════════════════════════
 
-    const visitId = weeklyVisitEmp.get(weekNum)
     if (visitId && d <= 4 && avail(visitId)) { // أحد(0)–خميس(4)
       push(visitId, {
         employeeId: visitId, date,
