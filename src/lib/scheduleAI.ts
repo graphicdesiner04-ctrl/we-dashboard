@@ -94,6 +94,11 @@ const DEFAULT_SHIFTS: Record<string, ShiftType> = {
   'emp-20': 'A', // 7703
   'emp-33': 'B', // 239015
   'emp-39': 'A', // 355561
+  // السينيورز — يتبعون نظام الشيفت
+  'emp-13': 'B', // احمد جلال (6813)
+  'emp-14': 'B', // محمد هشام (7850)
+  'emp-16': 'A', // علي محروس (5839)
+  'emp-17': 'A', // احمد علاء (6882)
 }
 
 export function inferShift(empId: string): ShiftType {
@@ -103,12 +108,15 @@ export function inferShift(empId: string): ShiftType {
 }
 
 // ── السينيورز ─────────────────────────────────────────────────────────────────
-export const SENIOR_MALLAWY    = 'emp-15'
-export const SENIORS_MINYA_A   = ['emp-13', 'emp-16'] // → br-05 الشهور الزوجية
-export const SENIORS_MINYA_B   = ['emp-14', 'emp-17'] // → br-06 الشهور الزوجية
-export const ALL_SENIORS_MINYA = [...SENIORS_MINYA_A, ...SENIORS_MINYA_B]
+export const SENIOR_MALLAWY  = 'emp-15' // احمد حسن بهاء — أحد-خميس فقط، بلا شيفت
 
-// سينيور ملوي يعمل أحد–خميس فقط
+// زوج شيفت B: محمد هشام (emp-14) + احمد جلال (emp-13) → يتبادلان المنيا/الجديدة شهرياً
+export const SENIORS_SHIFT_B: string[] = ['emp-14', 'emp-13']
+// زوج شيفت A: احمد علاء (emp-17) + علي محروس (emp-16) → يتبادلان المنيا/الجديدة شهرياً
+export const SENIORS_SHIFT_A: string[] = ['emp-17', 'emp-16']
+export const ALL_SENIORS_MINYA: string[] = [...SENIORS_SHIFT_B, ...SENIORS_SHIFT_A]
+
+// سينيور ملوي يعمل أحد–خميس فقط، لا يتبع نظام الشيفت
 const SENIOR_MALLAWY_DAYS = new Set([0, 1, 2, 3, 4])
 
 // ── الفروع الأساسية ───────────────────────────────────────────────────────────
@@ -180,6 +188,13 @@ export function classifyEmp(emp: Employee): EmployeeType {
 function geoIdx(brId: string): number {
   const i = GEO_ORDER.indexOf(brId)
   return i < 0 ? 4 : i
+}
+
+// يُعيد ترتيب المصفوفة دورياً حسب الشهر (لتغيير من "يُرسل للخارج" كل شهر)
+function rotatePriority<T>(arr: T[], monthOffset: number): T[] {
+  if (arr.length <= 1) return arr
+  const offset = monthOffset % arr.length
+  return [...arr.slice(offset), ...arr.slice(0, offset)]
 }
 
 export function addDays(iso: string, n: number): string {
@@ -360,26 +375,46 @@ export function generateAISchedule(
 
     // ══ سينيورز — خارج الحساب ══════════════════════════════════════════════════
 
-    // سينيور ملوي: أحد–خميس فقط
-    if (SENIOR_MALLAWY_DAYS.has(d) && avail(SENIOR_MALLAWY)) {
-      push(SENIOR_MALLAWY, {
-        employeeId: SENIOR_MALLAWY, branchId: 'br-01', date,
-        cellType: 'branch', startTime: '09:00', endTime: '21:00',
-        note: 'AI — سينيور ملوي',
-      })
+    const curMonth   = new Date(date + 'T00:00:00').getMonth()
+    const monthIdx   = ((curMonth - startMonth + 12) % 12) % 2
+
+    // سينيور ملوي (emp-15): أحد–خميس بلا شيفت، جمعة+سبت = راحة
+    if (avail(SENIOR_MALLAWY)) {
+      if (SENIOR_MALLAWY_DAYS.has(d)) {
+        push(SENIOR_MALLAWY, {
+          employeeId: SENIOR_MALLAWY, branchId: 'br-01', date,
+          cellType: 'branch', startTime: '09:00', endTime: '21:00',
+          note: 'AI — سينيور ملوي',
+        })
+      } else {
+        push(SENIOR_MALLAWY, { employeeId: SENIOR_MALLAWY, date, cellType: 'off', note: 'راحة' })
+      }
     }
 
-    // سينيورز المنيا: دوران شهري بين br-05 و br-06
-    const curMonth  = new Date(date + 'T00:00:00').getMonth()
-    const swapped   = ((curMonth - startMonth + 12) % 12) % 2 === 1
-    const pairBr05  = swapped ? SENIORS_MINYA_B : SENIORS_MINYA_A
-    const pairBr06  = swapped ? SENIORS_MINYA_A : SENIORS_MINYA_B
-    for (const sid of pairBr05)
-      if (avail(sid))
-        push(sid, { employeeId: sid, branchId: 'br-05', date, cellType: 'branch', startTime: '09:00', endTime: '21:00', note: 'AI — سينيور المنيا' })
-    for (const sid of pairBr06)
-      if (avail(sid))
-        push(sid, { employeeId: sid, branchId: 'br-06', date, cellType: 'branch', startTime: '09:00', endTime: '21:00', note: 'AI — سينيور المنيا الجديدة' })
+    // سينيورز المنيا — شيفت B (emp-14, emp-13): دوران شهري للفرع
+    const [senB_05, senB_06] = monthIdx === 0
+      ? [SENIORS_SHIFT_B[0], SENIORS_SHIFT_B[1]]
+      : [SENIORS_SHIFT_B[1], SENIORS_SHIFT_B[0]]
+    // سينيورز المنيا — شيفت A (emp-17, emp-16): دوران شهري للفرع
+    const [senA_05, senA_06] = monthIdx === 0
+      ? [SENIORS_SHIFT_A[0], SENIORS_SHIFT_A[1]]
+      : [SENIORS_SHIFT_A[1], SENIORS_SHIFT_A[0]]
+
+    for (const [senId, brId] of [
+      [senB_05, 'br-05'], [senB_06, 'br-06'],
+      [senA_05, 'br-05'], [senA_06, 'br-06'],
+    ] as [string, string][]) {
+      if (!avail(senId)) continue
+      if (!isWorkDay(getShift(senId), weekNum, d)) {
+        push(senId, { employeeId: senId, date, cellType: 'off', note: 'راحة' })
+      } else {
+        push(senId, {
+          employeeId: senId, branchId: brId, date,
+          cellType: 'branch', startTime: '09:00', endTime: '21:00',
+          note: `AI — سينيور ${brId === 'br-05' ? 'المنيا' : 'المنيا الجديدة'}`,
+        })
+      }
+    }
 
     // ══ ما قبل الخطوات: تمييز أيام الراحة ═════════════════════════════════════
     // كل وكيل لا يعمل اليوم (حسب شيفته وأسبوعه) يأخذ "راحة"
@@ -437,13 +472,19 @@ export function generateAISchedule(
       }
     }
 
+    // offset للتدوير الشهري داخل نفس الفرع (موظف مختلف يُرسل للخارج كل شهر)
+    const monthOffset = (curMonth - startMonth + 12) % 12
+
     // ══ الخطوة 2: دير مواس br-02 + المنيا الجديدة br-06 ══════════════════════
     // كل فرع: موظف واحد يومياً
     // (الموظفون غير العاملين اليوم موجودون بالفعل في usedToday بعد خطوة الراحة)
 
     for (const brId of ['br-02', 'br-06'] as const) {
-      // 1. من نفس الفرع — العاملون اليوم فقط
-      const fromBranch = agents.filter(e => getHome(e) === brId && avail(e.id))
+      // 1. من نفس الفرع — العاملون اليوم، مع تدوير الأولوية شهرياً
+      const fromBranch = rotatePriority(
+        agents.filter(e => getHome(e) === brId && avail(e.id)),
+        monthOffset,
+      )
 
       if (fromBranch.length > 0) {
         push(fromBranch[0].id, {
@@ -482,8 +523,11 @@ export function generateAISchedule(
       const needed = 2
       let placed   = 0
 
-      // 1. من نفس الفرع — العاملون اليوم فقط
-      const fromBranch = agents.filter(e => getHome(e) === brId && avail(e.id))
+      // 1. من نفس الفرع — العاملون اليوم، مع تدوير الأولوية شهرياً
+      const fromBranch = rotatePriority(
+        agents.filter(e => getHome(e) === brId && avail(e.id)),
+        monthOffset,
+      )
       for (const emp of fromBranch) {
         if (placed >= needed) break
         push(emp.id, {
@@ -551,13 +595,8 @@ export function generateAISchedule(
       warnings.push({ date, branchId: 'br-05', branchNameAr: br?.storeNameAr ?? 'المنيا', need: 2, got: minyaAgents })
     }
 
-    // ══ إدخالات "راحة" للسينيورز في أيام عدم العمل ════════════════════════════
-
-    // سينيور ملوي: راحة جمعة + سبت
-    if (!usedToday.has(SENIOR_MALLAWY) && !isVac(SENIOR_MALLAWY)) {
-      entries.push({ employeeId: SENIOR_MALLAWY, date, cellType: 'off', note: 'راحة' })
-    }
-    // سينيورز المنيا: إن لم يُوضَعوا اليوم، راحة
+    // ══ احتياطي: راحة لأي سينيور لم يُعالَج بعد ══════════════════════════════
+    // (يُغطي حالات الإجازات والسينيورز خارج القوائم المعتادة)
     for (const sen of seniors) {
       if (usedToday.has(sen.id) || isVac(sen.id)) continue
       entries.push({ employeeId: sen.id, date, cellType: 'off', note: 'راحة' })
