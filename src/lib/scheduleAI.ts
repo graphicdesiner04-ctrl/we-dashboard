@@ -355,6 +355,103 @@ export function generateAISchedule(
   const startMonth = new Date(config.startDate + 'T00:00:00').getMonth()
   const totalDays  = config.weeks * 7
 
+  // ── Pre-computation: توزيع الفروع أسبوعياً ──────────────────────────────────
+  // كل موظف يحصل على فرع واحد لكل أسبوع — لا تغيير في منتصف الأسبوع
+  // نشغّل مرتين لكل أسبوع: مرة لشيفت A ومرة لشيفت B (يغطيان أيام مختلفة)
+
+  const weeklyAssignA = new Map<number, Map<string, string>>() // weekNum → empId → branchId|'visit'
+  const weeklyAssignB = new Map<number, Map<string, string>>()
+
+  function buildWeekAssignment(W: number, shift: ShiftType): Map<string, string> {
+    const weekSun   = addDays(config.startDate, W * 7)
+    const weekMonth = new Date(weekSun + 'T00:00:00').getMonth()
+    const monthOff  = (weekMonth - startMonth + 12) % 12
+    const vId       = weeklyVisitEmp.get(W)
+
+    const isVacWeek = (id: string): boolean => {
+      for (let i = 0; i < 7; i++)
+        if (vacDays.has(`${id}:${addDays(weekSun, i)}`)) return true
+      return false
+    }
+
+    const result = new Map<string, string>()
+    const used   = new Set<string>()
+
+    // فيزيت — إن كان نفس الشيفت
+    if (vId && getShift(vId) === shift && !isVacWeek(vId)) {
+      result.set(vId, 'visit'); used.add(vId)
+    }
+
+    // مجمع الموظفين المتاحين لهذا الشيفت هذا الأسبوع
+    const pool = agents.filter(e =>
+      getShift(e.id) === shift &&
+      !DEDICATED_IDS.has(e.id) &&
+      e.id !== vId &&
+      !isVacWeek(e.id),
+    )
+
+    const availE = (id: string) => !used.has(id) && pool.some(e => e.id === id)
+    const pickE  = (empId: string, brId: string) => { result.set(empId, brId); used.add(empId) }
+
+    // دير مواس (br-02) + المنيا الجديدة (br-06): موظف واحد لكل
+    for (const brId of ['br-02', 'br-06'] as const) {
+      const fromHome = rotatePriority(
+        pool.filter(e => getHome(e) === brId && availE(e.id)),
+        monthOff,
+      )
+      if (fromHome.length > 0) { pickE(fromHome[0].id, brId); continue }
+
+      // تعويض: أقرب موظف جغرافياً
+      const nearest = pool
+        .filter(e => availE(e.id))
+        .sort((a, b) =>
+          Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
+          Math.abs(geoIdx(getHome(b)) - geoIdx(brId)),
+        )
+      if (nearest.length > 0) pickE(nearest[0].id, brId)
+    }
+
+    // ملوي (br-01) + أبوقرقاص (br-04): موظفان لكل
+    for (const brId of ['br-01', 'br-04'] as const) {
+      const fromHome = rotatePriority(
+        pool.filter(e => getHome(e) === brId && availE(e.id)),
+        monthOff,
+      )
+      let placed = 0
+      for (const emp of fromHome) {
+        if (placed >= 2) break
+        pickE(emp.id, brId); placed++
+      }
+      if (placed < 2) {
+        const nearest = pool
+          .filter(e => availE(e.id) && !SMALL_BRANCHES.has(getHome(e)))
+          .sort((a, b) =>
+            Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
+            Math.abs(geoIdx(getHome(b)) - geoIdx(brId)),
+          )
+        for (const emp of nearest) {
+          if (placed >= 2) break
+          pickE(emp.id, brId); placed++
+        }
+      }
+    }
+
+    // الباقون → المنيا (br-05)
+    for (const emp of pool) {
+      if (!availE(emp.id)) continue
+      result.set(emp.id, 'br-05')
+    }
+
+    return result
+  }
+
+  for (let W = 0; W < config.weeks; W++) {
+    weeklyAssignA.set(W, buildWeekAssignment(W, 'A'))
+    weeklyAssignB.set(W, buildWeekAssignment(W, 'B'))
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+
   for (let dayIdx = 0; dayIdx < totalDays; dayIdx++) {
     const date    = addDays(config.startDate, dayIdx)
     const d       = dow(date)
@@ -370,9 +467,6 @@ export function generateAISchedule(
     const isVac  = (id: string) => vacDays.has(`${id}:${date}`)
     const avail  = (id: string) => !usedToday.has(id) && !isVac(id)
 
-    // الفيزيت هذا الأسبوع
-    const visitId = weeklyVisitEmp.get(weekNum)
-
     // ══ سينيورز — خارج الحساب ══════════════════════════════════════════════════
 
     const curMonth   = new Date(date + 'T00:00:00').getMonth()
@@ -383,7 +477,7 @@ export function generateAISchedule(
       if (SENIOR_MALLAWY_DAYS.has(d)) {
         push(SENIOR_MALLAWY, {
           employeeId: SENIOR_MALLAWY, branchId: 'br-01', date,
-          cellType: 'branch', startTime: '09:00', endTime: '21:00',
+          cellType: 'branch', startTime: '09:00', endTime: d === 5 ? '16:00' : '21:00',
           note: 'AI — سينيور ملوي',
         })
       } else {
@@ -408,24 +502,12 @@ export function generateAISchedule(
       if (!isWorkDay(getShift(senId), weekNum, d)) {
         push(senId, { employeeId: senId, date, cellType: 'off', note: 'راحة' })
       } else {
+        const senEndTime = d === 5 ? '16:00' : '21:00'
         push(senId, {
           employeeId: senId, branchId: brId, date,
-          cellType: 'branch', startTime: '09:00', endTime: '21:00',
+          cellType: 'branch', startTime: '09:00', endTime: senEndTime,
           note: `AI — سينيور ${brId === 'br-05' ? 'المنيا' : 'المنيا الجديدة'}`,
         })
-      }
-    }
-
-    // ══ ما قبل الخطوات: تمييز أيام الراحة ═════════════════════════════════════
-    // كل وكيل لا يعمل اليوم (حسب شيفته وأسبوعه) يأخذ "راحة"
-    // استثناءات: موظفو الفروع الصغيرة (جدولهم مختلف) + موظف الفيزيت (أحد-خميس)
-
-    for (const agent of agents) {
-      if (!avail(agent.id)) continue                       // إجازة سنوية
-      if (DEDICATED_IDS.has(agent.id)) continue            // الفروع الصغيرة تُدار في الخطوة 1
-      if (agent.id === visitId && d <= 4) continue         // فيزيت: يعمل كامل أحد-خميس
-      if (!isWorkDay(getShift(agent.id), weekNum, d)) {
-        push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة' })
       }
     }
 
@@ -472,127 +554,54 @@ export function generateAISchedule(
       }
     }
 
-    // offset للتدوير الشهري داخل نفس الفرع (موظف مختلف يُرسل للخارج كل شهر)
-    const monthOffset = (curMonth - startMonth + 12) % 12
-
-    // ══ الخطوة 2: دير مواس br-02 + المنيا الجديدة br-06 ══════════════════════
-    // كل فرع: موظف واحد يومياً
-    // (الموظفون غير العاملين اليوم موجودون بالفعل في usedToday بعد خطوة الراحة)
-
-    for (const brId of ['br-02', 'br-06'] as const) {
-      // 1. من نفس الفرع — العاملون اليوم، مع تدوير الأولوية شهرياً
-      const fromBranch = rotatePriority(
-        agents.filter(e => getHome(e) === brId && avail(e.id)),
-        monthOffset,
-      )
-
-      if (fromBranch.length > 0) {
-        push(fromBranch[0].id, {
-          employeeId: fromBranch[0].id, branchId: brId, date,
-          cellType: 'branch', startTime: '09:00', endTime: '21:00',
-          note: `AI — شيفت ${getShift(fromBranch[0].id)}`,
-        })
-        continue
-      }
-
-      // 2. تعويض: أقرب فرع متاح
-      const nearest = agents
-        .filter(e => avail(e.id))
-        .sort((a, b) => {
-          const da = Math.abs(geoIdx(getHome(a)) - geoIdx(brId))
-          const db = Math.abs(geoIdx(getHome(b)) - geoIdx(brId))
-          return da !== db ? da - db : Math.random() - 0.5
-        })
-
-      if (nearest.length > 0) {
-        push(nearest[0].id, {
-          employeeId: nearest[0].id, branchId: brId, date,
-          cellType: 'branch', startTime: '09:00', endTime: '21:00',
-          note: 'AI — تعويض (أقرب فرع)',
-        })
-      } else {
-        const br = brMap.get(brId)
-        warnings.push({ date, branchId: brId, branchNameAr: br?.storeNameAr ?? brId, need: 1, got: 0 })
-      }
-    }
-
-    // ══ الخطوة 3: ملوي br-01 + أبوقرقاص br-04 ═════════════════════════════════
-    // كل فرع: موظفان يومياً
-
-    for (const brId of ['br-01', 'br-04'] as const) {
-      const needed = 2
-      let placed   = 0
-
-      // 1. من نفس الفرع — العاملون اليوم، مع تدوير الأولوية شهرياً
-      const fromBranch = rotatePriority(
-        agents.filter(e => getHome(e) === brId && avail(e.id)),
-        monthOffset,
-      )
-      for (const emp of fromBranch) {
-        if (placed >= needed) break
-        push(emp.id, {
-          employeeId: emp.id, branchId: brId, date,
-          cellType: 'branch', startTime: '09:00', endTime: '21:00',
-          note: `AI — شيفت ${getShift(emp.id)}`,
-        })
-        placed++
-      }
-
-      // 2. تعويض: أقرب فرع متاح (ليس مخصص لفرع صغير)
-      if (placed < needed) {
-        const nearest = agents
-          .filter(e => avail(e.id) && !DEDICATED_IDS.has(e.id) && !SMALL_BRANCHES.has(getHome(e)))
-          .sort((a, b) => {
-            const da = Math.abs(geoIdx(getHome(a)) - geoIdx(brId))
-            const db = Math.abs(geoIdx(getHome(b)) - geoIdx(brId))
-            return da !== db ? da - db : Math.random() - 0.5
-          })
-        for (const emp of nearest) {
-          if (placed >= needed) break
-          push(emp.id, {
-            employeeId: emp.id, branchId: brId, date,
-            cellType: 'branch', startTime: '09:00', endTime: '21:00',
-            note: 'AI — تعويض (أقرب فرع)',
-          })
-          placed++
-        }
-      }
-
-      if (placed < needed) {
-        const br = brMap.get(brId)
-        warnings.push({ date, branchId: brId, branchNameAr: br?.storeNameAr ?? brId, need: needed, got: placed })
-      }
-    }
-
-    // ══ الخطوة 4: الفيزيت (أحد → خميس) ════════════════════════════════════════
-
-    if (visitId && d <= 4 && avail(visitId)) { // أحد(0)–خميس(4)
-      push(visitId, {
-        employeeId: visitId, date,
-        cellType: 'visit', startTime: '09:00', endTime: '17:00',
-        note: 'AI — زيارة خارجية',
-      })
-    }
-
-    // ══ الخطوة 5: المنيا — امتصاص الفائض ══════════════════════════════════════
+    // ══ الوكلاء: توزيع من الجدول الأسبوعي المُحسوب مسبقاً ══════════════════════
+    // كل موظف لديه فرع واحد لكل أسبوع — لا تغيير في منتصف الأسبوع
+    // الجمعة = 7 ساعات (09:00–16:00) ، بقية الأيام = 12 ساعة (09:00–21:00)
 
     for (const agent of agents) {
       if (!avail(agent.id)) continue
-      push(agent.id, {
-        employeeId: agent.id, branchId: 'br-05', date,
-        cellType: 'branch', startTime: '09:00', endTime: '21:00',
-        note: 'AI — المنيا',
-      })
+      if (DEDICATED_IDS.has(agent.id)) continue // الفروع الصغيرة تُدار في الخطوة 1
+
+      const shift    = getShift(agent.id)
+      const weekMap  = shift === 'A' ? weeklyAssignA.get(weekNum) : weeklyAssignB.get(weekNum)
+      const assigned = weekMap?.get(agent.id)
+
+      if (assigned === 'visit') {
+        // فيزيت: أحد–خميس عمل، جمعة+سبت راحة (يتخطى نظام الشيفت)
+        if (d <= 4) {
+          push(agent.id, {
+            employeeId: agent.id, date,
+            cellType: 'visit', startTime: '09:00', endTime: '17:00',
+            note: 'AI — زيارة خارجية',
+          })
+        } else {
+          push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة' })
+        }
+      } else if (!isWorkDay(shift, weekNum, d)) {
+        // يوم راحة لهذا الشيفت هذا الأسبوع
+        push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة' })
+      } else {
+        // يوم عمل — الفرع المُعيَّن للأسبوع
+        const branchId = assigned ?? 'br-05' // احتياطي: المنيا
+        const endTime  = d === 5 ? '16:00' : '21:00' // جمعة 7 ساعات
+        push(agent.id, {
+          employeeId: agent.id, branchId, date,
+          cellType: 'branch', startTime: '09:00', endTime,
+          note: `AI — شيفت ${shift}`,
+        })
+      }
     }
 
-    // تحقق: المنيا ≥ 2 وكلاء (غير السينيورز)
-    const minyaAgents = [...usedToday].filter(id =>
-      agents.some(a => a.id === id) &&
-      entries.some(e => e.employeeId === id && e.date === date && e.branchId === 'br-05'),
-    ).length
-    if (minyaAgents < 2) {
-      const br = brMap.get('br-05')
-      warnings.push({ date, branchId: 'br-05', branchNameAr: br?.storeNameAr ?? 'المنيا', need: 2, got: minyaAgents })
+    // تحقق من التغطية الدنيا للفروع
+    for (const [brId, need] of [['br-02', 1], ['br-06', 1], ['br-01', 2], ['br-04', 2]] as const) {
+      const got = entries.filter(e =>
+        e.date === date && e.branchId === brId && e.cellType === 'branch' &&
+        agents.some(a => a.id === e.employeeId),
+      ).length
+      if (got < need) {
+        const br = brMap.get(brId)
+        warnings.push({ date, branchId: brId, branchNameAr: br?.storeNameAr ?? brId, need, got })
+      }
     }
 
     // ══ احتياطي: راحة لأي سينيور لم يُعالَج بعد ══════════════════════════════
