@@ -351,7 +351,7 @@ export default function AISchedulePage() {
               style={{ background: '#060C1A', borderColor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.85)' }}
             >
               {[1,2,3,4,6,8,12,13].map(n => (
-                <option key={n} value={n}>{n} {n === 1 ? 'أسبوع' : n <= 10 ? 'أسابيع' : 'أسبوعاً'} {n === 13 ? '(ربع سنة)' : ''}</option>
+                <option key={n} value={n} style={{ background: '#1e1e2e', color: '#fff' }}>{n} {n === 1 ? 'أسبوع' : n <= 10 ? 'أسابيع' : 'أسبوعاً'} {n === 13 ? '(ربع سنة)' : ''}</option>
               ))}
             </select>
           </div>
@@ -461,7 +461,7 @@ export default function AISchedulePage() {
                   style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.8)', border: 'none' }}
                 >
                   {agentList.map(e => (
-                    <option key={e.id} value={e.id}>{getEmpDisplay(e)}</option>
+                    <option key={e.id} value={e.id} style={{ background: '#1e1e2e', color: '#fff' }}>{getEmpDisplay(e)}</option>
                   ))}
                 </select>
 
@@ -547,7 +547,7 @@ export default function AISchedulePage() {
                         style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.65)', border: 'none', minWidth: 100 }}
                       >
                         {BRANCH_OPTIONS.map(b => (
-                          <option key={b.id} value={b.id}>{b.name}</option>
+                          <option key={b.id} value={b.id} style={{ background: '#1e1e2e', color: '#fff' }}>{b.name}</option>
                         ))}
                       </select>
                       <ShiftToggle
@@ -606,9 +606,11 @@ export default function AISchedulePage() {
                             minWidth: 72,
                           }}
                         >
-                          <option value="">— غير محدد</option>
+                          <option value="" style={{ background: '#1e1e2e', color: '#aaa' }}>— غير محدد</option>
                           {allowed.map(brId => (
-                            <option key={brId} value={brId}>{BR_NAME[brId] ?? brId}</option>
+                            <option key={brId} value={brId} style={{ background: '#1e1e2e', color: '#fff' }}>
+                              {BR_NAME[brId] ?? brId}
+                            </option>
                           ))}
                         </select>
                       </div>

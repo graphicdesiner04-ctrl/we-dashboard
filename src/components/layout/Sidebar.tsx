@@ -1,15 +1,61 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Clock, Calendar, HeartPulse,
   Repeat2, CalendarOff, Upload, Server,
   Users, GitBranch, CalendarDays, Star, Sparkles,
   ChevronLeft, ChevronRight, X, LogOut,
+  Download, FolderOpen,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth }     from '@/context/AuthContext'
 import { useLanguage } from '@/context/LanguageContext'
+
+// ── Backup / Restore ──────────────────────────────────────────────────────
+
+const STORAGE_PREFIX = 'we-ts-'
+
+function exportBackup() {
+  const data: Record<string, unknown> = {}
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (!key || !key.startsWith(STORAGE_PREFIX)) continue
+    try { data[key] = JSON.parse(localStorage.getItem(key)!) }
+    catch { data[key] = localStorage.getItem(key) }
+  }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `we-dashboard-backup-${new Date().toISOString().slice(0, 10)}.json`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function importBackup(file: File, onDone: () => void) {
+  const reader = new FileReader()
+  reader.onload = ev => {
+    try {
+      const raw  = ev.target?.result as string
+      const data = JSON.parse(raw) as Record<string, unknown>
+      let count  = 0
+      for (const [key, value] of Object.entries(data)) {
+        if (!key.startsWith(STORAGE_PREFIX)) continue
+        localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value))
+        count++
+      }
+      if (count === 0) { alert('الملف لا يحتوي على بيانات صالحة'); return }
+      onDone()
+      window.location.reload()
+    } catch {
+      alert('خطأ: الملف غير صالح أو تالف')
+    }
+  }
+  reader.readAsText(file)
+}
 
 // ── Nav structure ─────────────────────────────────────────────────────────
 
@@ -153,7 +199,8 @@ function SidebarContent({
 }) {
   const { session, logout } = useAuth()
   const { t } = useLanguage()
-  const navigate = useNavigate()
+  const navigate  = useNavigate()
+  const fileInput = useRef<HTMLInputElement>(null)
 
   const name    = session?.name ?? ''
   const initial = name.trim().charAt(0).toUpperCase()
@@ -208,6 +255,48 @@ function SidebarContent({
           <SoonItem key={item.path} {...item} collapsed={collapsed} />
         ))}
       </nav>
+
+      {/* Backup / Restore */}
+      {!collapsed && (
+        <div
+          className="px-3 py-2 border-t"
+          style={{ borderColor: 'rgba(255,255,255,0.07)' }}
+        >
+          <p className="text-[9px] font-bold uppercase tracking-widest mb-1.5" style={{ color: 'rgba(255,255,255,0.2)' }}>
+            البيانات
+          </p>
+          <div className="flex gap-1.5">
+            <button
+              onClick={exportBackup}
+              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors hover:bg-white/8"
+              style={{ border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}
+              title="تصدير نسخة احتياطية من كل البيانات"
+            >
+              <Download size={11} />
+              نسخ احتياطي
+            </button>
+            <button
+              onClick={() => fileInput.current?.click()}
+              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors hover:bg-white/8"
+              style={{ border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}
+              title="استعادة البيانات من ملف نسخة احتياطية"
+            >
+              <FolderOpen size={11} />
+              استعادة
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={e => {
+                const f = e.target.files?.[0]
+                if (f) importBackup(f, () => { e.target.value = '' })
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* User strip + logout */}
       {!collapsed && session && (
