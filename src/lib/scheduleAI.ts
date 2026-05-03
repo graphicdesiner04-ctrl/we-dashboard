@@ -36,8 +36,25 @@ export const GEO_ORDER = [
   'br-06', // المنيا الجديدة (7)
 ]
 
-// الحد الأقصى للمسافة الجغرافية المسموح بها (عدد المراكز)
-const MAX_GEO_DISTANCE = 3
+// الحد الأقصى للمسافة الجغرافية بحسب الفرع الأصلي للموظف
+// دير مواس (1) → ±1: دلجا..ملوي
+// ملوي (2)       → ±1: دير مواس..أبوقرقاص
+// أبوقرقاص (3)  → ±3: ملوي..المنيا
+// المنيا (6)     → ±3: أبوقرقاص..الجديدة
+// الجديدة (7)    → ±3: بني أحمد..الجديدة
+const MAX_GEO_BY_HOME: Record<string, number> = {
+  'br-03': 2, // دلجا → يصل لملوي
+  'br-02': 1, // دير مواس → دلجا ↔ ملوي
+  'br-01': 1, // ملوي → دير مواس ↔ أبوقرقاص
+  'br-04': 3, // أبوقرقاص → ملوي ↔ المنيا
+  'br-07': 1, // بني أحمد (dedicated)
+  'br-08': 1, // صفط (dedicated)
+  'br-05': 3, // المنيا → أبوقرقاص ↔ الجديدة
+  'br-06': 3, // الجديدة → بني أحمد ↔ الجديدة
+}
+function getMaxGeoDist(homeId: string): number {
+  return MAX_GEO_BY_HOME[homeId] ?? 2
+}
 
 export const SMALL_BRANCHES = new Set(['br-03', 'br-07', 'br-08'])
 
@@ -382,6 +399,50 @@ export function generateAISchedule(
   // كل موظف يحصل على فرع واحد لكل أسبوع — لا تغيير في منتصف الأسبوع
   // نشغّل مرتين لكل أسبوع: مرة لشيفت A ومرة لشيفت B (يغطيان أيام مختلفة)
 
+  // ── Pre-computation 0: بدلاء الفروع الصغيرة (محسوب أولاً لإخراجهم من الشيفت) ──
+  // عندما يكون الموظف المخصص في إجازة → يُختار بديل IBS أقرب جغرافياً
+  // البديل يشتغل Sat-Thu في الفرع الصغير ويُخرَج من توزيع الشيفت كلياً هذا الأسبوع
+
+  const weeklySmallSub    = new Map<number, Map<string, string>>() // W → brId → subEmpId
+  const weeklySmallSubIds = new Map<number, Set<string>>()         // W → Set<empId>
+
+  for (let W = 0; W < config.weeks; W++) {
+    const weekSun = addDays(config.startDate, W * 7)
+    const subMap  = new Map<string, string>()
+    const subIds  = new Set<string>()
+
+    const isVacAllWeek = (id: string) => {
+      for (let i = 0; i < 7; i++)
+        if (vacDays.has(`${id}:${addDays(weekSun, i)}`)) return true
+      return false
+    }
+
+    for (const [dedId, brId] of Object.entries(DEDICATED_MAP)) {
+      if (!isVacAllWeek(dedId)) continue // الموظف حاضر، لا حاجة لبديل
+
+      const candidates = agents.filter(e =>
+        classifyEmp(e) === 'IBS'          &&
+        !DEDICATED_IDS.has(e.id)          &&
+        !SMALL_BRANCHES.has(getHome(e))   &&
+        !subIds.has(e.id)                 &&
+        !isVacAllWeek(e.id)               &&
+        Math.abs(geoIdx(getHome(e)) - geoIdx(brId)) <= getMaxGeoDist(getHome(e)),
+      ).sort((a, b) =>
+        Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
+        Math.abs(geoIdx(getHome(b)) - geoIdx(brId)),
+      )
+
+      if (candidates.length > 0) {
+        subMap.set(brId, candidates[0].id)
+        subIds.add(candidates[0].id)
+      }
+    }
+
+    weeklySmallSub.set(W, subMap)
+    weeklySmallSubIds.set(W, subIds)
+  }
+
+  // ── Pre-computation 1: توزيع الفروع أسبوعياً (شيفت A و B منفصلَين) ────────────
   const weeklyAssignA = new Map<number, Map<string, string>>() // weekNum → empId → branchId|'visit'
   const weeklyAssignB = new Map<number, Map<string, string>>()
 
@@ -406,11 +467,13 @@ export function generateAISchedule(
     }
 
     // مجمع الموظفين المتاحين لهذا الشيفت هذا الأسبوع
+    // (يُستثنى بدلاء الفروع الصغيرة — هم في مهمة أسبوعية خارج الشيفت)
     const pool = agents.filter(e =>
-      getShift(e.id) === shift &&
-      !DEDICATED_IDS.has(e.id) &&
-      e.id !== vId &&
-      !isVacWeek(e.id),
+      getShift(e.id) === shift          &&
+      !DEDICATED_IDS.has(e.id)          &&
+      e.id !== vId                      &&
+      !isVacWeek(e.id)                  &&
+      !weeklySmallSubIds.get(W)?.has(e.id),
     )
 
     const availE = (id: string) => !used.has(id) && pool.some(e => e.id === id)
@@ -424,18 +487,18 @@ export function generateAISchedule(
       )
       if (fromHome.length > 0) { pickE(fromHome[0].id, brId); continue }
 
-      // تعويض: أقرب موظف جغرافياً — ضمن الحد الأقصى للمسافة
+      // تعويض: أقرب موظف جغرافياً — ضمن مسافته الشخصية المسموح بها
       const nearest = pool
         .filter(e =>
           availE(e.id) &&
-          Math.abs(geoIdx(getHome(e)) - geoIdx(brId)) <= MAX_GEO_DISTANCE,
+          Math.abs(geoIdx(getHome(e)) - geoIdx(brId)) <= getMaxGeoDist(getHome(e)),
         )
         .sort((a, b) =>
           Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
           Math.abs(geoIdx(getHome(b)) - geoIdx(brId)),
         )
       if (nearest.length > 0) pickE(nearest[0].id, brId)
-      // إن لم يوجد ضمن المسافة → يُترك الفرع بدون تغطية (تُسجَّل تحذير في الحلقة اليومية)
+      // لا يوجد ضمن المسافة → تحذير يُسجَّل في الحلقة اليومية
     }
 
     // ملوي (br-01) + أبوقرقاص (br-04): موظفان لكل
@@ -454,7 +517,7 @@ export function generateAISchedule(
           .filter(e =>
             availE(e.id) &&
             !SMALL_BRANCHES.has(getHome(e)) &&
-            Math.abs(geoIdx(getHome(e)) - geoIdx(brId)) <= MAX_GEO_DISTANCE,
+            Math.abs(geoIdx(getHome(e)) - geoIdx(brId)) <= getMaxGeoDist(getHome(e)),
           )
           .sort((a, b) =>
             Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
@@ -467,10 +530,23 @@ export function generateAISchedule(
       }
     }
 
-    // الباقون → المنيا (br-05)
+    // الباقون:
+    // — إن كانت المنيا ضمن مسافة الموظف → يذهب للمنيا (مركز الاستيعاب)
+    // — إن كانت بعيدة (دير مواس / ملوي) → أقرب فرع رئيسي مسموح به
+    const MAIN_FALLBACK = ['br-02', 'br-01', 'br-04', 'br-05', 'br-06'] as const
     for (const emp of pool) {
       if (!availE(emp.id)) continue
-      result.set(emp.id, 'br-05')
+      const homePos = geoIdx(getHome(emp))
+      const maxDist = getMaxGeoDist(getHome(emp))
+      if (Math.abs(geoIdx('br-05') - homePos) <= maxDist) {
+        result.set(emp.id, 'br-05')
+      } else {
+        // ابحث عن أقرب فرع رئيسي ضمن النطاق
+        const nearest = [...MAIN_FALLBACK]
+          .filter(br => Math.abs(geoIdx(br) - homePos) <= maxDist)
+          .sort((a, b) => Math.abs(geoIdx(a) - homePos) - Math.abs(geoIdx(b) - homePos))
+        result.set(emp.id, nearest[0] ?? getHome(emp))
+      }
     }
 
     return result
@@ -555,33 +631,20 @@ export function generateAISchedule(
       }
 
       if (dedId && avail(dedId)) {
-        // الموظف المخصص متاح
+        // الموظف المخصص حاضر
         push(dedId, {
           employeeId: dedId, branchId: brId, date,
           cellType: 'branch', startTime: '09:00', endTime: '16:00',
           note: 'AI — فرع صغير',
         })
       } else {
-        // الموظف في إجازة → أقرب IBS بديل (ليس مخصص لفرع صغير آخر، ليس في استخدام)
-        const sub = agents
-          .filter(e =>
-            !usedToday.has(e.id) && !isVac(e.id) &&
-            classifyEmp(e) === 'IBS'           &&
-            !DEDICATED_IDS.has(e.id)           &&
-            !SMALL_BRANCHES.has(getHome(e)),
-          )
-          .sort((a, b) => geoIdx(getHome(a)) - geoIdx(getHome(b)) || Math.random() - 0.5)
-
-        if (sub.length > 0) {
-          push(sub[0].id, {
-            employeeId: sub[0].id, branchId: brId, date,
-            cellType: 'branch', startTime: '09:00', endTime: '16:00',
-            note: 'AI — فرع صغير (بديل)',
-          })
-        } else {
+        // الموظف في إجازة → البديل الأسبوعي المُحسَب مسبقاً سيُعالَج في حلقة الوكلاء
+        const subId = weeklySmallSub.get(weekNum)?.get(brId)
+        if (!subId) {
           const br = brMap.get(brId)
           warnings.push({ date, branchId: brId, branchNameAr: br?.storeNameAr ?? brId, need: 1, got: 0 })
         }
+        // إن وُجد subId → سيُضاف في الحلقة التالية (حلقة الوكلاء)
       }
     }
 
@@ -592,6 +655,26 @@ export function generateAISchedule(
     for (const agent of agents) {
       if (!avail(agent.id)) continue
       if (DEDICATED_IDS.has(agent.id)) continue // الفروع الصغيرة تُدار في الخطوة 1
+
+      // هل هذا الموظف بديل فرع صغير هذا الأسبوع؟
+      // البديل يشتغل Sat-Thu في الفرع الصغير بغض النظر عن شيفته
+      const smallSubEntry = weeklySmallSub.get(weekNum)
+      const smallSubBrId  = smallSubEntry
+        ? [...smallSubEntry.entries()].find(([, sid]) => sid === agent.id)?.[0]
+        : undefined
+
+      if (smallSubBrId) {
+        if (d === 5) {
+          push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة جمعة' })
+        } else {
+          push(agent.id, {
+            employeeId: agent.id, branchId: smallSubBrId, date,
+            cellType: 'branch', startTime: '09:00', endTime: '16:00',
+            note: 'AI — فرع صغير (بديل)',
+          })
+        }
+        continue
+      }
 
       const shift    = getShift(agent.id)
       const weekMap  = shift === 'A' ? weeklyAssignA.get(weekNum) : weeklyAssignB.get(weekNum)
