@@ -177,7 +177,11 @@ export interface AIConfig {
   vacations:         VacationWeek[]
   visitCounts:       Record<string, number>
   autoVacation:      boolean
-  inactiveEmployees: string[]  // موظفون منقولون / موقفون — لا يدخلون التوزيع
+  inactiveEmployees: string[]
+  /** 'auto' = الخوارزمية تختار | 'manual' = يدوي من الـ UI */
+  visitMode:         'auto' | 'manual'
+  /** weekNum → empId — يُستخدم فقط عند visitMode = 'manual' */
+  manualVisits:      Record<number, string>
 }
 
 // مرجع الأسبوع: الأحد 5 أبريل 2026 = أسبوع 0 (زوجي) → شيفت B ثقيل
@@ -358,34 +362,47 @@ export function generateAISchedule(
     }
   }
 
-  // ── توزيع الفيزيت أسبوعياً (WE: IBS = 2:1) ──────────────────────────────────
+  // ── توزيع الفيزيت أسبوعياً ────────────────────────────────────────────────────
   // مجمع الفيزيت: موظفو المنيا (home=br-05) غير المخصصين للفروع الصغيرة
   const visitPool    = agents.filter(e => getHome(e) === 'br-05' && !DEDICATED_IDS.has(e.id))
   const weVisitPool  = visitPool.filter(e => classifyEmp(e) === 'WE')
   const ibsVisitPool = visitPool.filter(e => classifyEmp(e) === 'IBS')
 
-  // weekVisitEmp[weekNum] = empId المُختار للفيزيت هذا الأسبوع
   const weeklyVisitEmp = new Map<number, string>()
 
   for (let w = 0; w < config.weeks; w++) {
     const weekSun = addDays(config.startDate, w * 7)
 
-    // 2:1 → الأسابيع 0,1 = WE، الأسبوع 2 = IBS، 3,4 = WE، 5 = IBS ...
+    // ── وضع يدوي: استخدم الاختيار المحدد من الـ UI ──
+    const manualId = config.visitMode === 'manual' ? config.manualVisits?.[w] : undefined
+    if (manualId && visitPool.some(e => e.id === manualId)) {
+      // تحقق أنه مش في إجازة هذا الأسبوع
+      const onVac = Array.from({ length: 5 }, (_, i) =>
+        vacDays.has(`${manualId}:${addDays(weekSun, i)}`),
+      ).some(Boolean)
+      if (!onVac) {
+        weeklyVisitEmp.set(w, manualId)
+        visitCounts[manualId] = (visitCounts[manualId] ?? 0) + 1
+        if (!visitFirstDay.has(manualId)) visitFirstDay.set(manualId, weekSun)
+        continue
+      }
+    }
+
+    // ── وضع تلقائي: WE:IBS = 2:1 ──
     const wantWE    = w % 3 !== 2
     const preferred = (wantWE && weVisitPool.length > 0) ? weVisitPool : ibsVisitPool
     const fallback  = (preferred === weVisitPool) ? ibsVisitPool : weVisitPool
 
     for (const pool of [preferred, fallback, visitPool]) {
       const avail = pool.filter(e => {
-        for (let i = 0; i < 5; i++) { // أحد → خميس
+        for (let i = 0; i < 5; i++)
           if (vacDays.has(`${e.id}:${addDays(weekSun, i)}`)) return false
-        }
         return true
       })
       if (!avail.length) continue
-      const minV  = Math.min(...avail.map(e => visitCounts[e.id] ?? 0))
-      const tied  = avail.filter(e => (visitCounts[e.id] ?? 0) === minV)
-      const pick  = tied[Math.floor(Math.random() * tied.length)]
+      const minV = Math.min(...avail.map(e => visitCounts[e.id] ?? 0))
+      const tied = avail.filter(e => (visitCounts[e.id] ?? 0) === minV)
+      const pick = tied[Math.floor(Math.random() * tied.length)]
       weeklyVisitEmp.set(w, pick.id)
       visitCounts[pick.id] = (visitCounts[pick.id] ?? 0) + 1
       if (!visitFirstDay.has(pick.id)) visitFirstDay.set(pick.id, weekSun)
@@ -422,6 +439,13 @@ export function generateAISchedule(
     for (const [dedId, brId] of Object.entries(DEDICATED_MAP)) {
       if (!isVacAllWeek(dedId)) continue // الموظف حاضر، لا حاجة لبديل
 
+      // الشيفت الثقيل في الأسبوع السابق (W-1):
+      // إذا كان (W-1+weekOffset) زوجياً → B ثقيل ← نفضل A كبديل (خميس وجمعة راحة)
+      // إذا كان فردياً → A ثقيل ← نفضل B
+      const prevParity    = W > 0 ? (W - 1 + weekOffset) % 2 : -1
+      const heavyInPrev: ShiftType | null =
+        prevParity < 0 ? null : prevParity === 0 ? 'B' : 'A'
+
       const candidates = agents.filter(e =>
         classifyEmp(e) === 'IBS'          &&
         !DEDICATED_IDS.has(e.id)          &&
@@ -429,10 +453,19 @@ export function generateAISchedule(
         !subIds.has(e.id)                 &&
         !isVacAllWeek(e.id)               &&
         Math.abs(geoIdx(getHome(e)) - geoIdx(brId)) <= getMaxGeoDist(getHome(e)),
-      ).sort((a, b) =>
-        Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
-        Math.abs(geoIdx(getHome(b)) - geoIdx(brId)),
-      )
+      ).sort((a, b) => {
+        // أولاً: فضّل من كان على الشيفت الخفيف في الأسبوع السابق (خميس+جمعة راحة)
+        if (heavyInPrev) {
+          const aLight = getShift(a.id) !== heavyInPrev ? 0 : 1
+          const bLight = getShift(b.id) !== heavyInPrev ? 0 : 1
+          if (aLight !== bLight) return aLight - bLight
+        }
+        // ثانياً: أقرب جغرافياً
+        return (
+          Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
+          Math.abs(geoIdx(getHome(b)) - geoIdx(brId))
+        )
+      })
 
       if (candidates.length > 0) {
         subMap.set(brId, candidates[0].id)
@@ -543,7 +576,23 @@ export function generateAISchedule(
       }
     }
 
-    // الباقون: يتبعون قائمة أولوياتهم الشخصية أولاً، ثم القاعدة الجغرافية
+    // ── حساب الطاقة الاستيعابية المتبقية لكل فرع ─────────────────────────────────
+    // الحد الأقصى: br-02 و br-06 = 1 موظف، br-01 و br-04 = 2 موظفين، br-05 = ∞
+    const BRANCH_CAP: Partial<Record<string, number>> = {
+      'br-02': 1, 'br-06': 1, 'br-01': 2, 'br-04': 2,
+    }
+    const brCount = new Map<string, number>()
+    for (const [, br] of result.entries()) {
+      if (br !== 'visit') brCount.set(br, (brCount.get(br) ?? 0) + 1)
+    }
+    const notFull = (br: string): boolean => {
+      const cap = BRANCH_CAP[br]
+      return cap === undefined || (brCount.get(br) ?? 0) < cap
+    }
+    const occupy = (br: string) => brCount.set(br, (brCount.get(br) ?? 0) + 1)
+
+    // ── الباقون: أولويات شخصية → جغرافي شمالاً → الاحتياطي ──────────────────────
+    // الفائض يتحرك من الجنوب للشمال (تصاعد الـ geo index)
     const MAIN_FALLBACK = ['br-02', 'br-01', 'br-04', 'br-05', 'br-06'] as const
     for (const emp of pool) {
       if (!availE(emp.id)) continue
@@ -551,24 +600,44 @@ export function generateAISchedule(
       const maxDist = getMaxGeoDist(getHome(emp))
       const priList = cfgMap.get(emp.id)?.branchPriorities ?? []
 
-      // جرب الأولويات بالترتيب (مع احترام النطاق الجغرافي)
+      // 1. جرب قائمة الأولويات الشخصية (ضمن النطاق وبه سعة)
       let target: string | undefined
       for (const priBr of priList) {
-        if (Math.abs(geoIdx(priBr) - homePos) <= maxDist) { target = priBr; break }
+        if (
+          Math.abs(geoIdx(priBr) - homePos) <= maxDist &&
+          notFull(priBr)
+        ) { target = priBr; break }
       }
 
-      // لا أولوية أو كلها خارج النطاق → القاعدة الجغرافية
-      if (!target) {
-        if (Math.abs(geoIdx('br-05') - homePos) <= maxDist) {
-          target = 'br-05'
-        } else {
-          const nearest = [...MAIN_FALLBACK]
-            .filter(br => Math.abs(geoIdx(br) - homePos) <= maxDist)
-            .sort((a, b) => Math.abs(geoIdx(a) - homePos) - Math.abs(geoIdx(b) - homePos))
-          target = nearest[0] ?? getHome(emp)
-        }
+      // 2. لا أولوية → المنيا إن كانت ضمن النطاق
+      if (!target && Math.abs(geoIdx('br-05') - homePos) <= maxDist && notFull('br-05')) {
+        target = 'br-05'
       }
-      result.set(emp.id, target)
+
+      // 3. المنيا بعيدة (دير مواس/ملوي) → أقرب شمالاً ضمن النطاق
+      if (!target) {
+        const northFirst = [...MAIN_FALLBACK]
+          .filter(br =>
+            Math.abs(geoIdx(br) - homePos) <= maxDist &&
+            notFull(br),
+          )
+          .sort((a, b) => {
+            // تصاعد نحو الشمال (geo index أكبر = أشمل): فضّل geoIdx أعلى
+            const distA = geoIdx(a) - homePos
+            const distB = geoIdx(b) - homePos
+            // كلاهما شمال: الأقرب أولاً
+            if (distA >= 0 && distB >= 0) return distA - distB
+            // كلاهما جنوب: الأقرب أولاً
+            if (distA < 0 && distB < 0) return distB - distA
+            // أحدهما شمال: الشمال أولاً
+            return distA >= 0 ? -1 : 1
+          })
+        target = northFirst[0]
+      }
+
+      // 4. احتياطي نهائي: الفرع الأصلي حتى لو ممتلئ (منع الخلو التام)
+      result.set(emp.id, target ?? getHome(emp))
+      if (target) occupy(target)
     }
 
     return result

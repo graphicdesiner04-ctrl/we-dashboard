@@ -10,7 +10,7 @@ import {
   generateAISchedule, classifyEmp, inferShift,
   GEO_ORDER, SENIOR_MALLAWY, ALL_SENIORS_MINYA,
   DEFAULT_HOME_BRANCHES, autoAssignVacations, calcWeekOffset,
-  MAX_GEO_BY_HOME,
+  MAX_GEO_BY_HOME, addDays,
 } from '@/lib/scheduleAI'
 import type {
   EmployeeAIConfig, VacationWeek, AIConfig, AIResult, AIWarning, ShiftType,
@@ -20,10 +20,12 @@ import type { ScheduleInput } from '@/hooks/useSchedule'
 import { exportAIScheduleXlsx } from '@/lib/exportScheduleXlsx'
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
-const KEY_EMPCFG    = 'ai-schedule-emp-configs'
-const KEY_VACATIONS = 'ai-schedule-vacations'
-const KEY_VISITS    = 'ai-schedule-visit-counts'
-const KEY_INACTIVE  = 'ai-schedule-inactive'
+const KEY_EMPCFG        = 'ai-schedule-emp-configs'
+const KEY_VACATIONS     = 'ai-schedule-vacations'
+const KEY_VISITS        = 'ai-schedule-visit-counts'
+const KEY_INACTIVE      = 'ai-schedule-inactive'
+const KEY_VISIT_MODE    = 'ai-schedule-visit-mode'
+const KEY_MANUAL_VISITS = 'ai-schedule-manual-visits'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -177,6 +179,28 @@ export default function AISchedulePage() {
     storage.get<string[]>(KEY_INACTIVE, []),
   )
 
+  // ── Visit mode (auto / manual) ─────────────────────────────────────────────
+  const [visitMode, setVisitModeState] = useState<'auto' | 'manual'>(() =>
+    storage.get<'auto' | 'manual'>(KEY_VISIT_MODE, 'auto'),
+  )
+  const [manualVisits, setManualVisitsState] = useState<Record<number, string>>(() =>
+    storage.get<Record<number, string>>(KEY_MANUAL_VISITS, {}),
+  )
+
+  function setVisitMode(mode: 'auto' | 'manual') {
+    setVisitModeState(mode)
+    storage.set(KEY_VISIT_MODE, mode)
+    setResult(null)
+  }
+
+  function setManualVisit(weekIdx: number, empId: string) {
+    const next = { ...manualVisits, [weekIdx]: empId }
+    if (!empId) delete next[weekIdx]
+    setManualVisitsState(next)
+    storage.set(KEY_MANUAL_VISITS, next)
+    setResult(null)
+  }
+
   function toggleInactive(empId: string) {
     const next = inactiveIds.includes(empId)
       ? inactiveIds.filter(id => id !== empId)
@@ -248,6 +272,18 @@ export default function AISchedulePage() {
     saveVacations([...vacations, ...preview])
   }
 
+  // ── Visit pool (for manual mode dropdowns) ────────────────────────────────
+  const visitPool = useMemo(() => {
+    const DEDICATED = new Set(['emp-26', 'emp-41', 'emp-22'])
+    return agentList.filter(e => {
+      if (inactiveIds.includes(e.id)) return false
+      if (DEDICATED.has(e.id)) return false
+      const cfg  = empConfigs.find(c => c.employeeId === e.id)
+      const home = cfg?.homeBranchId ?? DEFAULT_HOME_BRANCHES[e.id] ?? ''
+      return home === 'br-05'
+    })
+  }, [agentList, empConfigs, inactiveIds])
+
   // ── Generate ───────────────────────────────────────────────────────────────
   function handleGenerate() {
     setApplied(false)
@@ -255,6 +291,8 @@ export default function AISchedulePage() {
       startDate, weeks, empConfigs, vacations,
       visitCounts, autoVacation: autoVac,
       inactiveEmployees: inactiveIds,
+      visitMode,
+      manualVisits,
     }
     setResult(generateAISchedule(allEmp, branches, config))
   }
@@ -497,7 +535,93 @@ export default function AISchedulePage() {
         </button>
       </SectionCard>
 
-      {/* ── 3. Employee configs ──────────────────────────────────────────── */}
+      {/* ── 3. Visit config ─────────────────────────────────────────────── */}
+      <SectionCard title="إعدادات الزيارة الخارجية" icon={Eye} defaultOpen={false}>
+        {/* Mode toggle */}
+        <div className="flex gap-2 mb-4">
+          {(['auto', 'manual'] as const).map(mode => (
+            <button
+              key={mode}
+              onClick={() => setVisitMode(mode)}
+              className="flex-1 py-2.5 rounded-xl text-xs font-bold transition-colors"
+              style={{
+                background: visitMode === mode
+                  ? mode === 'auto' ? 'rgba(107,33,168,0.3)' : 'rgba(245,158,11,0.2)'
+                  : 'rgba(255,255,255,0.04)',
+                border: `1px solid ${visitMode === mode
+                  ? mode === 'auto' ? 'rgba(192,132,252,0.4)' : 'rgba(252,211,77,0.35)'
+                  : 'rgba(255,255,255,0.07)'}`,
+                color: visitMode === mode
+                  ? mode === 'auto' ? '#C084FC' : '#FCD34D'
+                  : 'rgba(255,255,255,0.3)',
+              }}
+            >
+              {mode === 'auto' ? '🎲 عشوائي تلقائي' : '✋ يدوي (أختار بنفسي)'}
+            </button>
+          ))}
+        </div>
+
+        {visitMode === 'auto' && (
+          <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            الخوارزمية تختار موظف من المنيا كل أسبوع (WE:IBS = 2:1) — توزيع دوري عادل
+          </p>
+        )}
+
+        {visitMode === 'manual' && (
+          <div>
+            <p className="text-xs mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              اختر موظف الزيارة لكل أسبوع — لو تركت فارغاً الخوارزمية تختار تلقائياً
+            </p>
+            <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              {Array.from({ length: weeks }, (_, i) => {
+                const weekSun = addDays(startDate, i * 7)
+                const selId   = manualVisits[i] ?? ''
+                const selEmp  = visitPool.find(e => e.id === selId)
+                return (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2.5 p-2 rounded-xl"
+                    style={{
+                      background: selId ? 'rgba(245,158,11,0.06)' : '#060C1A',
+                      border: `1px solid ${selId ? 'rgba(252,211,77,0.15)' : 'rgba(255,255,255,0.05)'}`,
+                    }}
+                  >
+                    <span
+                      className="text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.3)' }}
+                    >
+                      {i + 1}
+                    </span>
+                    <span className="text-[10px] flex-shrink-0 tabular-nums" style={{ color: 'rgba(255,255,255,0.35)', minWidth: 74 }}>
+                      {weekSun}
+                    </span>
+                    <select
+                      value={selId}
+                      onChange={e => setManualVisit(i, e.target.value)}
+                      className="flex-1 rounded-lg px-2 py-1.5 text-xs outline-none"
+                      style={{
+                        background: 'rgba(255,255,255,0.05)',
+                        color: selId ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.3)',
+                        border: 'none',
+                      }}
+                    >
+                      <option value="" style={{ background: '#1e1e2e', color: '#aaa' }}>— تلقائي</option>
+                      {visitPool.map(e => (
+                        <option key={e.id} value={e.id} style={{ background: '#1e1e2e', color: '#fff' }}>
+                          {getEmpDisplay(e)} ({classifyEmp(e)})
+                        </option>
+                      ))}
+                    </select>
+                    {selEmp && <Badge type={classifyEmp(selEmp)} />}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </SectionCard>
+
+      {/* ── 4. Employee configs ──────────────────────────────────────────── */}
       <SectionCard
         title={`إعدادات الموظفين${inactiveIds.length ? ` — ${inactiveIds.length} موقف` : ''}`}
         icon={Users}
