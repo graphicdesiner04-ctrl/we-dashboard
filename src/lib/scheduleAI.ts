@@ -26,15 +26,18 @@ import type { ScheduleInput } from '@/hooks/useSchedule'
 
 // ── ترتيب جغرافي جنوب → شمال ────────────────────────────────────────────────
 export const GEO_ORDER = [
-  'br-03', // دلجا
-  'br-02', // دير مواس
-  'br-01', // ملوي
-  'br-04', // أبوقرقاص
-  'br-07', // بني أحمد
-  'br-05', // المنيا
-  'br-08', // صفط الخمار
-  'br-06', // المنيا الجديدة
+  'br-03', // دلجا          (0)
+  'br-02', // دير مواس      (1)
+  'br-01', // ملوي           (2)
+  'br-04', // أبوقرقاص      (3)
+  'br-07', // بني أحمد      (4)
+  'br-08', // صفط الخمار    (5)
+  'br-05', // المنيا         (6)
+  'br-06', // المنيا الجديدة (7)
 ]
+
+// الحد الأقصى للمسافة الجغرافية المسموح بها (عدد المراكز)
+const MAX_GEO_DISTANCE = 3
 
 export const SMALL_BRANCHES = new Set(['br-03', 'br-07', 'br-08'])
 
@@ -125,7 +128,7 @@ export const DEFAULT_HOME_BRANCHES: Record<string, string> = {
   'emp-21': 'br-02', 'emp-38': 'br-02', 'emp-31': 'br-02',                    // دير مواس
   'emp-24': 'br-01', 'emp-28': 'br-01', 'emp-34': 'br-01', 'emp-23': 'br-01', // ملوي
   'emp-30': 'br-04', 'emp-37': 'br-04', 'emp-32': 'br-04', 'emp-12': 'br-04', // أبوقرقاص
-  'emp-29': 'br-04', 'emp-18': 'br-04',                                        // أبوقرقاص (مرنون)
+  'emp-29': 'br-04', 'emp-18': 'br-05',                                        // وائل من المنيا
   'emp-41': 'br-07',                                                            // بني أحمد
   'emp-22': 'br-08',                                                            // صفط
   'emp-27': 'br-05', 'emp-19': 'br-05', 'emp-20': 'br-05',                    // المنيا
@@ -149,12 +152,24 @@ export interface VacationWeek {
 }
 
 export interface AIConfig {
-  startDate:    string
-  weeks:        number
-  empConfigs:   EmployeeAIConfig[]
-  vacations:    VacationWeek[]
-  visitCounts:  Record<string, number>
-  autoVacation: boolean
+  startDate:         string
+  weeks:             number
+  empConfigs:        EmployeeAIConfig[]
+  vacations:         VacationWeek[]
+  visitCounts:       Record<string, number>
+  autoVacation:      boolean
+  inactiveEmployees: string[]  // موظفون منقولون / موقفون — لا يدخلون التوزيع
+}
+
+// مرجع الأسبوع: الأحد 5 أبريل 2026 = أسبوع 0 (زوجي) → شيفت B ثقيل
+const WEEK_OFFSET_REF = '2026-04-05'
+
+/** يحسب ضبط تتابع الأسابيع بين تاريخ المرجع وتاريخ بداية الجدول الجديد */
+export function calcWeekOffset(startDate: string): number {
+  const refMs   = new Date(WEEK_OFFSET_REF + 'T00:00:00').getTime()
+  const startMs = new Date(startDate        + 'T00:00:00').getTime()
+  const days    = Math.round((startMs - refMs) / 86_400_000)
+  return (((Math.floor(days / 7)) % 2) + 2) % 2
 }
 
 export interface AIWarning {
@@ -270,8 +285,16 @@ export function generateAISchedule(
   const brMap  = new Map(branches.map(b => [b.id, b]))
   const cfgMap = new Map(config.empConfigs.map(c => [c.employeeId, c]))
 
+  // ضبط تتابع الأسابيع بالنسبة لمرجع أبريل 2026
+  const weekOffset = calcWeekOffset(config.startDate)
+
+  // الموظفون المنقولون / الموقفون
+  const inactiveSet = new Set(config.inactiveEmployees ?? [])
+
   const eligible = employees.filter(e =>
-    e.role !== 'Supervisor' && (e.region ?? 'south') === 'south',
+    e.role !== 'Supervisor' &&
+    (e.region ?? 'south') === 'south' &&
+    !inactiveSet.has(e.id),
   )
   const agents  = eligible.filter(e => e.role === 'Agent')
   const seniors = eligible.filter(e => e.role === 'Senior')
@@ -401,14 +424,18 @@ export function generateAISchedule(
       )
       if (fromHome.length > 0) { pickE(fromHome[0].id, brId); continue }
 
-      // تعويض: أقرب موظف جغرافياً
+      // تعويض: أقرب موظف جغرافياً — ضمن الحد الأقصى للمسافة
       const nearest = pool
-        .filter(e => availE(e.id))
+        .filter(e =>
+          availE(e.id) &&
+          Math.abs(geoIdx(getHome(e)) - geoIdx(brId)) <= MAX_GEO_DISTANCE,
+        )
         .sort((a, b) =>
           Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
           Math.abs(geoIdx(getHome(b)) - geoIdx(brId)),
         )
       if (nearest.length > 0) pickE(nearest[0].id, brId)
+      // إن لم يوجد ضمن المسافة → يُترك الفرع بدون تغطية (تُسجَّل تحذير في الحلقة اليومية)
     }
 
     // ملوي (br-01) + أبوقرقاص (br-04): موظفان لكل
@@ -424,7 +451,11 @@ export function generateAISchedule(
       }
       if (placed < 2) {
         const nearest = pool
-          .filter(e => availE(e.id) && !SMALL_BRANCHES.has(getHome(e)))
+          .filter(e =>
+            availE(e.id) &&
+            !SMALL_BRANCHES.has(getHome(e)) &&
+            Math.abs(geoIdx(getHome(e)) - geoIdx(brId)) <= MAX_GEO_DISTANCE,
+          )
           .sort((a, b) =>
             Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
             Math.abs(geoIdx(getHome(b)) - geoIdx(brId)),
@@ -499,7 +530,7 @@ export function generateAISchedule(
       [senA_05, 'br-05'], [senA_06, 'br-06'],
     ] as [string, string][]) {
       if (!avail(senId)) continue
-      if (!isWorkDay(getShift(senId), weekNum, d)) {
+      if (!isWorkDay(getShift(senId), weekNum + weekOffset, d)) {
         push(senId, { employeeId: senId, date, cellType: 'off', note: 'راحة' })
       } else {
         const senEndTime = d === 5 ? '16:00' : '21:00'
@@ -577,7 +608,7 @@ export function generateAISchedule(
         } else {
           push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة' })
         }
-      } else if (!isWorkDay(shift, weekNum, d)) {
+      } else if (!isWorkDay(shift, weekNum + weekOffset, d)) {
         // يوم راحة لهذا الشيفت هذا الأسبوع
         push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة' })
       } else {

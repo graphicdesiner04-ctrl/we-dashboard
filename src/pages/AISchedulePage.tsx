@@ -2,14 +2,14 @@ import { useState, useMemo, useCallback } from 'react'
 import {
   Sparkles, Play, CheckCircle, AlertTriangle, Trash2,
   Plus, ChevronDown, ChevronUp, CalendarDays, Users,
-  Info, Wand2, Shuffle, Download, Eye, BarChart2,
+  Info, Wand2, Shuffle, Download, Eye, BarChart2, UserX,
 } from 'lucide-react'
 import { useSchedule } from '@/hooks/useSchedule'
 import { storage } from '@/lib/storage'
 import {
   generateAISchedule, classifyEmp, inferShift,
   GEO_ORDER, SENIOR_MALLAWY, ALL_SENIORS_MINYA,
-  DEFAULT_HOME_BRANCHES, autoAssignVacations,
+  DEFAULT_HOME_BRANCHES, autoAssignVacations, calcWeekOffset,
 } from '@/lib/scheduleAI'
 import type {
   EmployeeAIConfig, VacationWeek, AIConfig, AIResult, AIWarning, ShiftType,
@@ -22,6 +22,7 @@ import { exportAIScheduleXlsx } from '@/lib/exportScheduleXlsx'
 const KEY_EMPCFG    = 'ai-schedule-emp-configs'
 const KEY_VACATIONS = 'ai-schedule-vacations'
 const KEY_VISITS    = 'ai-schedule-visit-counts'
+const KEY_INACTIVE  = 'ai-schedule-inactive'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -163,6 +164,20 @@ export default function AISchedulePage() {
     storage.get<Record<string, number>>(KEY_VISITS, {}),
   )
 
+  // ── Inactive employees (منقولون / موقفون) ──────────────────────────────────
+  const [inactiveIds, setInactiveIds] = useState<string[]>(() =>
+    storage.get<string[]>(KEY_INACTIVE, []),
+  )
+
+  function toggleInactive(empId: string) {
+    const next = inactiveIds.includes(empId)
+      ? inactiveIds.filter(id => id !== empId)
+      : [...inactiveIds, empId]
+    setInactiveIds(next)
+    storage.set(KEY_INACTIVE, next)
+    setResult(null)
+  }
+
   // ── Generation params ──────────────────────────────────────────────────────
   const [startDate, setStartDate]   = useState(nextSunday)
   const [weeks, setWeeks]           = useState(13)
@@ -216,9 +231,12 @@ export default function AISchedulePage() {
     const config: AIConfig = {
       startDate, weeks, empConfigs, vacations,
       visitCounts, autoVacation: autoVac,
+      inactiveEmployees: inactiveIds,
     }
     setResult(generateAISchedule(allEmp, branches, config))
   }
+
+  const weekOffsetInfo = useMemo(() => calcWeekOffset(startDate), [startDate])
 
   // ── Apply ──────────────────────────────────────────────────────────────────
   function handleApply() {
@@ -354,6 +372,12 @@ export default function AISchedulePage() {
             <p><strong style={{ color: '#C084FC' }}>شيفت A (أسبوع 1):</strong> سبت + ثلاثاء + أربعاء</p>
             <p><strong style={{ color: '#FCD34D' }}>شيفت B (أسبوع 1):</strong> أحد + اثنين + خميس + جمعة</p>
             <p style={{ color: 'rgba(255,255,255,0.3)' }}>الأسبوع 2: يتعكسان — الترتيب: فروع صغيرة ← دير/جديدة ← ملوي/أبوقرقاص ← فيزيت ← المنيا</p>
+            <p style={{ marginTop: 4, color: weekOffsetInfo === 0 ? '#86EFAC' : '#FCD34D' }}>
+              <strong>تتابع الأسابيع:</strong>{' '}
+              {weekOffsetInfo === 0
+                ? '✓ يبدأ من نفس نقطة المرجع (B ثقيل)'
+                : '↔ مُعاد ضبطه — الأسبوع الأول سيكون A ثقيل'}
+            </p>
           </div>
         </div>
       </SectionCard>
@@ -451,9 +475,14 @@ export default function AISchedulePage() {
       </SectionCard>
 
       {/* ── 3. Employee configs ──────────────────────────────────────────── */}
-      <SectionCard title="إعدادات الموظفين" icon={Users} defaultOpen={false}>
+      <SectionCard
+        title={`إعدادات الموظفين${inactiveIds.length ? ` — ${inactiveIds.length} موقف` : ''}`}
+        icon={Users}
+        defaultOpen={false}
+      >
         <p className="text-xs mb-4" style={{ color: 'rgba(255,255,255,0.35)' }}>
-          الفرع الأساسي لكل موظف وشيفت البداية (A أو B) — يتعكسان كل أسبوع
+          الفرع الأساسي لكل موظف وشيفت البداية (A أو B) — يتعكسان كل أسبوع.{' '}
+          <span style={{ color: '#FCA5A5' }}>أيقونة <UserX size={10} className="inline" /> تعني الموظف منقول ولا يدخل التوزيع.</span>
         </p>
 
         {/* Agents */}
@@ -462,35 +491,63 @@ export default function AISchedulePage() {
         </p>
         <div className="space-y-1.5 mb-5">
           {agentCfgs.map(cfg => {
-            const emp = allEmp.find(e => e.id === cfg.employeeId)
+            const emp      = allEmp.find(e => e.id === cfg.employeeId)
             if (!emp) return null
+            const inactive = inactiveIds.includes(cfg.employeeId)
             return (
               <div
                 key={cfg.employeeId}
                 className="flex items-center gap-2 p-2.5 rounded-xl"
-                style={{ background: '#060C1A', border: '1px solid rgba(255,255,255,0.05)' }}
+                style={{
+                  background: inactive ? 'rgba(239,68,68,0.06)' : '#060C1A',
+                  border: `1px solid ${inactive ? 'rgba(239,68,68,0.25)' : 'rgba(255,255,255,0.05)'}`,
+                  opacity: inactive ? 0.7 : 1,
+                }}
               >
                 <Badge type={classifyEmp(emp)} />
-                <span className="flex-1 text-xs font-semibold truncate" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                <span className={`flex-1 text-xs font-semibold truncate ${inactive ? 'line-through' : ''}`} style={{ color: inactive ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.75)' }}>
                   {getEmpDisplay(emp)}
                 </span>
-                <select
-                  value={cfg.homeBranchId}
-                  onChange={e => updateEmpCfg(cfg.employeeId, { homeBranchId: e.target.value })}
-                  className="rounded-lg px-2 py-1 text-xs outline-none flex-shrink-0"
+                {!inactive && (
+                  <>
+                    <select
+                      value={cfg.homeBranchId}
+                      onChange={e => updateEmpCfg(cfg.employeeId, { homeBranchId: e.target.value })}
+                      className="rounded-lg px-2 py-1 text-xs outline-none flex-shrink-0"
+                      style={{
+                        background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.65)',
+                        border: 'none', minWidth: 105,
+                      }}
+                    >
+                      {BRANCH_OPTIONS.map(b => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                    <ShiftToggle
+                      value={cfg.shift ?? 'A'}
+                      onChange={s => updateEmpCfg(cfg.employeeId, { shift: s })}
+                    />
+                  </>
+                )}
+                {inactive && (
+                  <span
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                    style={{ background: 'rgba(239,68,68,0.2)', color: '#FCA5A5' }}
+                  >
+                    منقول
+                  </span>
+                )}
+                <button
+                  onClick={() => toggleInactive(cfg.employeeId)}
+                  title={inactive ? 'إعادة تفعيل الموظف' : 'إيقاف — الموظف منقول'}
+                  className="p-1.5 rounded-lg transition-colors flex-shrink-0"
                   style={{
-                    background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.65)',
-                    border: 'none', minWidth: 105,
+                    background: inactive ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.04)',
+                    color: inactive ? '#FCA5A5' : 'rgba(255,255,255,0.2)',
                   }}
                 >
-                  {BRANCH_OPTIONS.map(b => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-                <ShiftToggle
-                  value={cfg.shift ?? 'A'}
-                  onChange={s => updateEmpCfg(cfg.employeeId, { shift: s })}
-                />
+                  <UserX size={12} />
+                </button>
               </div>
             )
           })}
