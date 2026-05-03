@@ -36,13 +36,13 @@ export const GEO_ORDER = [
   'br-06', // المنيا الجديدة (7)
 ]
 
-// الحد الأقصى للمسافة الجغرافية بحسب الفرع الأصلي للموظف
+// الحد الأقصى للمسافة الجغرافية بحسب الفرع الأصلي للموظف (مُصدَّر للـ UI)
 // دير مواس (1) → ±1: دلجا..ملوي
 // ملوي (2)       → ±1: دير مواس..أبوقرقاص
 // أبوقرقاص (3)  → ±3: ملوي..المنيا
 // المنيا (6)     → ±3: أبوقرقاص..الجديدة
 // الجديدة (7)    → ±3: بني أحمد..الجديدة
-const MAX_GEO_BY_HOME: Record<string, number> = {
+export const MAX_GEO_BY_HOME: Record<string, number> = {
   'br-03': 2, // دلجا → يصل لملوي
   'br-02': 1, // دير مواس → دلجا ↔ ملوي
   'br-01': 1, // ملوي → دير مواس ↔ أبوقرقاص
@@ -157,9 +157,11 @@ export const DEFAULT_HOME_BRANCHES: Record<string, string> = {
 export type EmployeeType = 'WE' | 'IBS'
 
 export interface EmployeeAIConfig {
-  employeeId:   string
-  homeBranchId: string
-  shift:        ShiftType
+  employeeId:       string
+  homeBranchId:     string
+  shift:            ShiftType
+  /** قائمة أولوية الفروع (حتى 3) — مرتبة: الأعلى أولوية أولاً */
+  branchPriorities?: string[]
 }
 
 export interface VacationWeek {
@@ -479,6 +481,24 @@ export function generateAISchedule(
     const availE = (id: string) => !used.has(id) && pool.some(e => e.id === id)
     const pickE  = (empId: string, brId: string) => { result.set(empId, brId); used.add(empId) }
 
+    // أولوية موظف تجاه فرع معيَّن (0 = أعلى أولوية، 999 = غير محدد)
+    const empPriIdx = (empId: string, brId: string): number => {
+      const list = cfgMap.get(empId)?.branchPriorities ?? []
+      const i    = list.indexOf(brId)
+      return i >= 0 ? i : 999
+    }
+
+    // sort مُدمَج: أولوية أولاً، ثم مسافة جغرافية
+    const byPriThenDist = (brId: string) =>
+      (a: Employee, b: Employee) => {
+        const pd = empPriIdx(a.id, brId) - empPriIdx(b.id, brId)
+        if (pd !== 0) return pd
+        return (
+          Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
+          Math.abs(geoIdx(getHome(b)) - geoIdx(brId))
+        )
+      }
+
     // دير مواس (br-02) + المنيا الجديدة (br-06): موظف واحد لكل
     for (const brId of ['br-02', 'br-06'] as const) {
       const fromHome = rotatePriority(
@@ -487,18 +507,14 @@ export function generateAISchedule(
       )
       if (fromHome.length > 0) { pickE(fromHome[0].id, brId); continue }
 
-      // تعويض: أقرب موظف جغرافياً — ضمن مسافته الشخصية المسموح بها
+      // تعويض: أولوية + مسافة جغرافية
       const nearest = pool
         .filter(e =>
           availE(e.id) &&
           Math.abs(geoIdx(getHome(e)) - geoIdx(brId)) <= getMaxGeoDist(getHome(e)),
         )
-        .sort((a, b) =>
-          Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
-          Math.abs(geoIdx(getHome(b)) - geoIdx(brId)),
-        )
+        .sort(byPriThenDist(brId))
       if (nearest.length > 0) pickE(nearest[0].id, brId)
-      // لا يوجد ضمن المسافة → تحذير يُسجَّل في الحلقة اليومية
     }
 
     // ملوي (br-01) + أبوقرقاص (br-04): موظفان لكل
@@ -519,10 +535,7 @@ export function generateAISchedule(
             !SMALL_BRANCHES.has(getHome(e)) &&
             Math.abs(geoIdx(getHome(e)) - geoIdx(brId)) <= getMaxGeoDist(getHome(e)),
           )
-          .sort((a, b) =>
-            Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
-            Math.abs(geoIdx(getHome(b)) - geoIdx(brId)),
-          )
+          .sort(byPriThenDist(brId))
         for (const emp of nearest) {
           if (placed >= 2) break
           pickE(emp.id, brId); placed++
@@ -530,23 +543,32 @@ export function generateAISchedule(
       }
     }
 
-    // الباقون:
-    // — إن كانت المنيا ضمن مسافة الموظف → يذهب للمنيا (مركز الاستيعاب)
-    // — إن كانت بعيدة (دير مواس / ملوي) → أقرب فرع رئيسي مسموح به
+    // الباقون: يتبعون قائمة أولوياتهم الشخصية أولاً، ثم القاعدة الجغرافية
     const MAIN_FALLBACK = ['br-02', 'br-01', 'br-04', 'br-05', 'br-06'] as const
     for (const emp of pool) {
       if (!availE(emp.id)) continue
       const homePos = geoIdx(getHome(emp))
       const maxDist = getMaxGeoDist(getHome(emp))
-      if (Math.abs(geoIdx('br-05') - homePos) <= maxDist) {
-        result.set(emp.id, 'br-05')
-      } else {
-        // ابحث عن أقرب فرع رئيسي ضمن النطاق
-        const nearest = [...MAIN_FALLBACK]
-          .filter(br => Math.abs(geoIdx(br) - homePos) <= maxDist)
-          .sort((a, b) => Math.abs(geoIdx(a) - homePos) - Math.abs(geoIdx(b) - homePos))
-        result.set(emp.id, nearest[0] ?? getHome(emp))
+      const priList = cfgMap.get(emp.id)?.branchPriorities ?? []
+
+      // جرب الأولويات بالترتيب (مع احترام النطاق الجغرافي)
+      let target: string | undefined
+      for (const priBr of priList) {
+        if (Math.abs(geoIdx(priBr) - homePos) <= maxDist) { target = priBr; break }
       }
+
+      // لا أولوية أو كلها خارج النطاق → القاعدة الجغرافية
+      if (!target) {
+        if (Math.abs(geoIdx('br-05') - homePos) <= maxDist) {
+          target = 'br-05'
+        } else {
+          const nearest = [...MAIN_FALLBACK]
+            .filter(br => Math.abs(geoIdx(br) - homePos) <= maxDist)
+            .sort((a, b) => Math.abs(geoIdx(a) - homePos) - Math.abs(geoIdx(b) - homePos))
+          target = nearest[0] ?? getHome(emp)
+        }
+      }
+      result.set(emp.id, target)
     }
 
     return result

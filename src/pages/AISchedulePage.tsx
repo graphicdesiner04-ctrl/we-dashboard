@@ -10,6 +10,7 @@ import {
   generateAISchedule, classifyEmp, inferShift,
   GEO_ORDER, SENIOR_MALLAWY, ALL_SENIORS_MINYA,
   DEFAULT_HOME_BRANCHES, autoAssignVacations, calcWeekOffset,
+  MAX_GEO_BY_HOME,
 } from '@/lib/scheduleAI'
 import type {
   EmployeeAIConfig, VacationWeek, AIConfig, AIResult, AIWarning, ShiftType,
@@ -53,6 +54,13 @@ const BR_NAME: Record<string, string> = {
 }
 
 const BRANCH_OPTIONS = GEO_ORDER.map(id => ({ id, name: BR_NAME[id] ?? id }))
+
+/** الفروع المسموح جغرافياً للموظف بناءً على فرعه الأصلي */
+function getAllowedBranches(homeId: string): string[] {
+  const homePos = GEO_ORDER.indexOf(homeId)
+  const maxDist = MAX_GEO_BY_HOME[homeId] ?? 2
+  return GEO_ORDER.filter((_, i) => Math.abs(i - homePos) <= maxDist)
+}
 
 // ── Badge ─────────────────────────────────────────────────────────────────────
 
@@ -200,6 +208,21 @@ export default function AISchedulePage() {
   // ── Config handlers ────────────────────────────────────────────────────────
   function updateEmpCfg(empId: string, patch: Partial<EmployeeAIConfig>) {
     saveEmpConfigs(empConfigs.map(c => c.employeeId === empId ? { ...c, ...patch } : c))
+    setResult(null)
+  }
+
+  function updateEmpPriority(empId: string, idx: number, brId: string) {
+    const cfg  = empConfigs.find(c => c.employeeId === empId)
+    if (!cfg) return
+    const pris = Array.from({ length: 3 }, (_, i) => cfg.branchPriorities?.[i] ?? '')
+    pris[idx]  = brId
+    saveEmpConfigs(
+      empConfigs.map(c => c.employeeId === empId
+        ? { ...c, branchPriorities: pris.filter(Boolean) }
+        : c,
+      ),
+    )
+    setResult(null)
   }
 
   function addVacation() {
@@ -494,60 +517,114 @@ export default function AISchedulePage() {
             const emp      = allEmp.find(e => e.id === cfg.employeeId)
             if (!emp) return null
             const inactive = inactiveIds.includes(cfg.employeeId)
+            const allowed  = getAllowedBranches(cfg.homeBranchId)
+            const pris     = cfg.branchPriorities ?? []
             return (
               <div
                 key={cfg.employeeId}
-                className="flex items-center gap-2 p-2.5 rounded-xl"
+                className="rounded-xl p-2.5"
                 style={{
                   background: inactive ? 'rgba(239,68,68,0.06)' : '#060C1A',
                   border: `1px solid ${inactive ? 'rgba(239,68,68,0.25)' : 'rgba(255,255,255,0.05)'}`,
                   opacity: inactive ? 0.7 : 1,
                 }}
               >
-                <Badge type={classifyEmp(emp)} />
-                <span className={`flex-1 text-xs font-semibold truncate ${inactive ? 'line-through' : ''}`} style={{ color: inactive ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.75)' }}>
-                  {getEmpDisplay(emp)}
-                </span>
-                {!inactive && (
-                  <>
-                    <select
-                      value={cfg.homeBranchId}
-                      onChange={e => updateEmpCfg(cfg.employeeId, { homeBranchId: e.target.value })}
-                      className="rounded-lg px-2 py-1 text-xs outline-none flex-shrink-0"
-                      style={{
-                        background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.65)',
-                        border: 'none', minWidth: 105,
-                      }}
-                    >
-                      {BRANCH_OPTIONS.map(b => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                      ))}
-                    </select>
-                    <ShiftToggle
-                      value={cfg.shift ?? 'A'}
-                      onChange={s => updateEmpCfg(cfg.employeeId, { shift: s })}
-                    />
-                  </>
-                )}
-                {inactive && (
+                {/* ── الصف الرئيسي ── */}
+                <div className="flex items-center gap-2">
+                  <Badge type={classifyEmp(emp)} />
                   <span
-                    className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
-                    style={{ background: 'rgba(239,68,68,0.2)', color: '#FCA5A5' }}
+                    className={`flex-1 text-xs font-semibold truncate ${inactive ? 'line-through' : ''}`}
+                    style={{ color: inactive ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.75)' }}
                   >
-                    منقول
+                    {getEmpDisplay(emp)}
                   </span>
+                  {!inactive && (
+                    <>
+                      <select
+                        value={cfg.homeBranchId}
+                        onChange={e => updateEmpCfg(cfg.employeeId, { homeBranchId: e.target.value })}
+                        className="rounded-lg px-2 py-1 text-xs outline-none flex-shrink-0"
+                        style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.65)', border: 'none', minWidth: 100 }}
+                      >
+                        {BRANCH_OPTIONS.map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                      <ShiftToggle
+                        value={cfg.shift ?? 'A'}
+                        onChange={s => updateEmpCfg(cfg.employeeId, { shift: s })}
+                      />
+                    </>
+                  )}
+                  {inactive && (
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                      style={{ background: 'rgba(239,68,68,0.2)', color: '#FCA5A5' }}
+                    >منقول</span>
+                  )}
+                  <button
+                    onClick={() => toggleInactive(cfg.employeeId)}
+                    title={inactive ? 'إعادة تفعيل الموظف' : 'إيقاف — الموظف منقول'}
+                    className="p-1.5 rounded-lg transition-colors flex-shrink-0"
+                    style={{
+                      background: inactive ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.04)',
+                      color: inactive ? '#FCA5A5' : 'rgba(255,255,255,0.2)',
+                    }}
+                  >
+                    <UserX size={12} />
+                  </button>
+                </div>
+
+                {/* ── أولوية التغطية (3 فروع مرتَّبة) ── */}
+                {!inactive && (
+                  <div className="flex items-center gap-1.5 mt-1.5 pr-1">
+                    <span className="text-[9px] font-bold flex-shrink-0" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                      أولوية:
+                    </span>
+                    {[0, 1, 2].map(i => (
+                      <div key={i} className="flex items-center gap-0.5 flex-shrink-0">
+                        <span
+                          className="text-[8px] font-black w-3 h-3 rounded-full flex items-center justify-center flex-shrink-0"
+                          style={{
+                            background: pris[i]
+                              ? 'rgba(192,132,252,0.25)'
+                              : 'rgba(255,255,255,0.06)',
+                            color: pris[i] ? '#C084FC' : 'rgba(255,255,255,0.2)',
+                          }}
+                        >
+                          {i + 1}
+                        </span>
+                        <select
+                          value={pris[i] ?? ''}
+                          onChange={e => updateEmpPriority(cfg.employeeId, i, e.target.value)}
+                          className="rounded outline-none text-[10px]"
+                          style={{
+                            background: pris[i] ? 'rgba(192,132,252,0.1)' : 'rgba(255,255,255,0.04)',
+                            border: `1px solid ${pris[i] ? 'rgba(192,132,252,0.2)' : 'rgba(255,255,255,0.07)'}`,
+                            color: pris[i] ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.25)',
+                            padding: '1px 4px',
+                            minWidth: 72,
+                          }}
+                        >
+                          <option value="">— غير محدد</option>
+                          {allowed.map(brId => (
+                            <option key={brId} value={brId}>{BR_NAME[brId] ?? brId}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                    {pris.length > 0 && (
+                      <button
+                        onClick={() => updateEmpCfg(cfg.employeeId, { branchPriorities: [] })}
+                        className="text-[9px] px-1.5 py-0.5 rounded flex-shrink-0"
+                        style={{ color: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.07)' }}
+                        title="مسح الأولويات"
+                      >
+                        مسح
+                      </button>
+                    )}
+                  </div>
                 )}
-                <button
-                  onClick={() => toggleInactive(cfg.employeeId)}
-                  title={inactive ? 'إعادة تفعيل الموظف' : 'إيقاف — الموظف منقول'}
-                  className="p-1.5 rounded-lg transition-colors flex-shrink-0"
-                  style={{
-                    background: inactive ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.04)',
-                    color: inactive ? '#FCA5A5' : 'rgba(255,255,255,0.2)',
-                  }}
-                >
-                  <UserX size={12} />
-                </button>
               </div>
             )
           })}
