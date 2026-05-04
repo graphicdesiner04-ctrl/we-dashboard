@@ -150,7 +150,7 @@ function Stat({ label, value, color }: { label: string; value: number; color: st
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function AISchedulePage() {
-  const { employees: allEmp, branches, addEntries } = useSchedule('south')
+  const { employees: allEmp, branches, addEntries: _addEntries, overwriteEntries } = useSchedule('south')
 
   // Eligible: Agents + Seniors (not Supervisor), south only
   const eligible = useMemo(() =>
@@ -236,11 +236,26 @@ export default function AISchedulePage() {
   const [resultTab, setResultTab]   = useState<'summary' | 'preview'>('summary')
 
   // ── سياق الجدول السابق (للاستمرارية التلقائية) ────────────────────────────
-  const [prevContext] = useState(() => ({
+  const [prevContext, setPrevContext] = useState(() => ({
     endDate:    storage.get<string>(KEY_PREV_END_DATE,  ''),
     visitEmpId: storage.get<string>(KEY_PREV_VISIT_EMP, ''),
     vacEmpIds:  storage.get<string[]>(KEY_PREV_VAC_EMPS, []),
   }))
+
+  /** تحديث تاريخ نهاية الجدول السابق يدوياً → يضبط تاريخ البداية تلقائياً */
+  function updatePrevEndDate(date: string) {
+    const next = { ...prevContext, endDate: date }
+    setPrevContext(next)
+    storage.set(KEY_PREV_END_DATE, date)
+    if (date) {
+      const d = new Date(date + 'T00:00:00')
+      d.setDate(d.getDate() + 1)
+      if (d.getDay() === 0) {
+        setStartDate(d.toISOString().slice(0, 10))
+        setResult(null)
+      }
+    }
+  }
 
   // ── Persistence helpers ────────────────────────────────────────────────────
   const saveEmpConfigs = useCallback((cfgs: EmployeeAIConfig[]) => {
@@ -334,27 +349,35 @@ export default function AISchedulePage() {
   // ── Apply ──────────────────────────────────────────────────────────────────
   function handleApply() {
     if (!result) return
-    addEntries(result.entries)
+
+    // كل المدخلات = الجدول الجديد + المدخلات الرجعية (أيام راحة قبل البداية)
+    const allNewEntries = [...result.entries, ...result.retroactiveEntries]
+    const allNewDates   = [...new Set(allNewEntries.map(e => e.date))]
+
+    // overwriteEntries: يمسح أي مدخلات قديمة للأيام المغطاة ثم يضيف الجديدة
+    // يمنع التكرار ويضمن استبدال مدخلات الجدول القديم للأيام الرجعية
+    overwriteEntries(allNewEntries, allNewDates)
+
     setVisitCounts(result.visitCounts)
     storage.set(KEY_VISITS, result.visitCounts)
+
     // Merge auto-vacations into stored vacations so they persist
     if (result.autoVacationsAdded.length) {
       saveVacations([...vacations, ...result.autoVacationsAdded])
     }
 
     // ── حفظ سياق الجدول للدورة القادمة ──────────────────────────────────────
-    // آخر يوم من الجدول الحالي (السبت)
-    const newEndDate = addDays(startDate, weeks * 7 - 1)
-    // موظف الفيزيت في آخر أسبوع
+    const newEndDate    = addDays(startDate, weeks * 7 - 1)
     const lastWeekSun   = addDays(startDate, (weeks - 1) * 7)
     const lastVisitInfo = result.weekVisits.find(wv => wv.weekStart === lastWeekSun)
-    // كل موظفي الإجازة من الدورة الحالية (يدوي + تلقائي)
-    const allVacIds = [...new Set(
+    const allVacIds     = [...new Set(
       [...vacations, ...result.autoVacationsAdded].map(v => v.employeeId),
     )]
+
     storage.set(KEY_PREV_END_DATE,  newEndDate)
     storage.set(KEY_PREV_VISIT_EMP, lastVisitInfo?.employee.id ?? '')
     storage.set(KEY_PREV_VAC_EMPS,  allVacIds)
+    setPrevContext({ endDate: newEndDate, visitEmpId: lastVisitInfo?.employee.id ?? '', vacEmpIds: allVacIds })
 
     setApplied(true)
   }
@@ -412,6 +435,29 @@ export default function AISchedulePage() {
       {/* ── 1. Period ───────────────────────────────────────────────────── */}
       <SectionCard title="فترة التوليد" icon={CalendarDays}>
 
+        {/* حقل تاريخ نهاية الجدول السابق */}
+        <div className="mb-3">
+          <label className="block text-xs font-semibold mb-1.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            آخر يوم في الجدول السابق (سبت) — لاستمرارية تلقائية
+          </label>
+          <input
+            type="date"
+            value={prevContext.endDate}
+            onChange={e => updatePrevEndDate(e.target.value)}
+            className="w-full rounded-xl px-3 py-2.5 text-sm font-semibold outline-none border"
+            style={{
+              background: '#060C1A',
+              borderColor: prevContext.endDate ? 'rgba(134,239,172,0.3)' : 'rgba(255,255,255,0.07)',
+              color: prevContext.endDate ? '#86EFAC' : 'rgba(255,255,255,0.4)',
+            }}
+          />
+          {prevContext.endDate && (
+            <p className="text-[10px] mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
+              تاريخ البداية المقترح: {addDays(prevContext.endDate, 1)}
+            </p>
+          )}
+        </div>
+
         {/* شريط الاستمرارية */}
         {isConsecutiveToPrev && (
           <div
@@ -420,9 +466,9 @@ export default function AISchedulePage() {
           >
             <CheckCircle size={13} color="#86EFAC" className="flex-shrink-0" />
             <p className="text-xs" style={{ color: '#86EFAC' }}>
-              <strong>استمرارية تلقائية</strong> — يكمل الجدول السابق ({prevContext.endDate})
+              ✓ استمرارية تلقائية — الجدول يكمل الجدول السابق بنفس الريتم
               {prevContext.visitEmpId && (
-                <span style={{ color: 'rgba(255,255,255,0.4)' }}>
+                <span style={{ color: 'rgba(255,255,255,0.45)' }}>
                   {' '}· آخر فيزيت: {allEmp.find(e => e.id === prevContext.visitEmpId)?.name ?? prevContext.visitEmpId}
                 </span>
               )}

@@ -218,6 +218,11 @@ export interface WeekVisitInfo {
 
 export interface AIResult {
   entries:            ScheduleInput[]
+  /**
+   * مدخلات ما قبل تاريخ البداية (أيام راحة رجعية)
+   * تُضاف للجدول القديم عند التطبيق لمنع الفجوة البصرية بين الجدولين
+   */
+  retroactiveEntries: ScheduleInput[]
   warnings:           AIWarning[]
   visitCounts:        Record<string, number>
   weekVisits:         WeekVisitInfo[]
@@ -1117,5 +1122,36 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
     if (emp) weekVisits.push({ weekStart: firstDate, employee: emp, empType: classifyEmp(emp) })
   }
 
-  return { entries, warnings, visitCounts, weekVisits, autoVacationsAdded }
+  // ── مدخلات رجعية: راحة ما قبل البداية (للاستمرارية مع الجدول السابق) ─────────
+  // تُحسَب فقط عند وجود سياق جدول سابق متتالٍ
+  // تُضاف لأيام الخميس+الجمعة+السبت قبل startDate لموظفي إجازة/زيارة أسبوع 0
+  // عند التطبيق ستُستبدل مدخلات الجدول القديم لتلك الأيام بمدخلات الراحة هذه
+  const retroactiveEntries: ScheduleInput[] = []
+  const hasPrevContext = !!(config.prevPeriodVisitEmpId || (config.prevPeriodVacEmpIds ?? []).length)
+
+  if (hasPrevContext) {
+    // موظفو الإجازة في الأسبوع 0
+    const week0VacEmps = allVacations
+      .filter(v => v.weekStart === config.startDate)
+      .map(v => v.employeeId)
+    // موظف الفيزيت في الأسبوع 0
+    const week0VisitEmp = weeklyVisitEmp.get(0)
+    const preBoundaryEmps = new Set([
+      ...week0VacEmps,
+      ...(week0VisitEmp ? [week0VisitEmp] : []),
+    ])
+
+    for (const empId of preBoundaryEmps) {
+      for (const offset of [-3, -2, -1]) { // خميس(-3)، جمعة(-2)، سبت(-1)
+        retroactiveEntries.push({
+          employeeId: empId,
+          date:       addDays(config.startDate, offset),
+          cellType:   'off',
+          note:       'AI — راحة قبل إجازة/زيارة (استمرارية)',
+        })
+      }
+    }
+  }
+
+  return { entries, retroactiveEntries, warnings, visitCounts, weekVisits, autoVacationsAdded }
 }
