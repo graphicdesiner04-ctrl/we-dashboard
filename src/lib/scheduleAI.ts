@@ -1043,14 +1043,21 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
       const smallSubSet = weeklySmallSub.get(weekNum)
       const smallSubIds = smallSubSet ? new Set(smallSubSet.values()) : new Set<string>()
 
-      // البحث عن مرشحين: موظف يوم عمله هذا اليوم لكن لديه مدخل 'annual' أو 'off'
-      // استثناء: أيام forcedOffDays (جمعة/سبت/خميس قبل+بعد الإجازة) لا تُلغى أبداً
+      // البحث عن مرشحين: موظف يوم عمله هذا اليوم لكن لديه مدخل 'off' فقط
+      // قواعد صارمة:
+      //   ✗ موظف في إجازة سنوية (vacDays) → ممنوع تحريكه مطلقاً
+      //   ✗ موظف في زيارة خارجية هذا الأسبوع (أحد–خميس) → ممنوع تحريكه
+      //   ✗ راحة جمعة+سبت بعد الإجازة/الزيارة (hardForcedOff) → ممنوع إلغاؤها
+      //   ✓ يجوز إلغاء راحة ما قبل الإجازة (خميس/جمعة/سبت) إذا كان الفرع فارغاً
       const candidates = agents
         .filter(emp => {
           if (DEDICATED_IDS.has(emp.id)) return false
           if (smallSubIds.has(emp.id))   return false // بديل فرع صغير لا يتحرك
+          // ✗ الموظف في إجازة سنوية هذا اليوم — لا يجوز مطلقاً
+          if (vacDays.has(`${emp.id}:${date}`)) return false
+          // ✗ الموظف في زيارة خارجية هذا الأسبوع (أحد–خميس) — لا يجوز مطلقاً
+          if (weeklyVisitEmp.get(weekNum) === emp.id && d <= 4) return false
           // ✗ لا يجوز إلغاء راحة ما بعد الإجازة/الزيارة (جمعة+سبت بعدها) — hard rule
-          // ✓ يجوز إلغاء راحة ما قبلها (خميس+جمعة+سبت قبلها) إذا كان الفرع فارغاً
           if (hardForcedOff.has(`${emp.id}:${date}`)) return false
           const shift = getShift(emp.id)
           // لازم يكون يوم عمله الطبيعي
@@ -1059,10 +1066,11 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
           if (Math.abs(geoIdx(getHome(emp)) - geoIdx(brId)) > getMaxGeoDist(getHome(emp))) return false
           // لازم مش بيشتغل في فرع آخر نفس اليوم
           if (entries.some(e => e.date === date && e.employeeId === emp.id && e.cellType === 'branch')) return false
-          // لازم عنده مدخل 'annual' أو 'off' (لو عنده شيء آخر، هو مشغول)
+          // لازم عنده مدخل 'off' فقط (راحة قابلة للإلغاء للتغطية الطارئة)
+          // ملاحظة: 'annual' مُستبعدة بواسطة vacDays أعلاه — لا نقبل تحريك موظف في إجازة
           return entries.some(e =>
             e.date === date && e.employeeId === emp.id &&
-            (e.cellType === 'annual' || e.cellType === 'off'),
+            e.cellType === 'off',
           )
         })
         .sort((a, b) => {
@@ -1080,10 +1088,10 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
         const emp     = candidates[i]
         const endTime = d === 5 ? '16:00' : '21:00'
 
-        // احذف مدخل الإجازة أو الراحة لهذا اليوم
+        // احذف مدخل الراحة لهذا اليوم (off فقط — annual محمية ولا تُحذف)
         const idx = entries.findIndex(e =>
           e.date === date && e.employeeId === emp.id &&
-          (e.cellType === 'annual' || e.cellType === 'off'),
+          e.cellType === 'off',
         )
         if (idx >= 0) entries.splice(idx, 1)
 
