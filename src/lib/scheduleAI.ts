@@ -252,12 +252,58 @@ export function getSunday(iso: string): string {
   return d.toISOString().slice(0, 10)
 }
 
+// ── مساعد: الفرع الأصلي للموظف (مستوى الوحدة — مُستخدَم في فحص الإجازات الآمنة) ──
+function getHomeBranch(empId: string, empConfigs?: EmployeeAIConfig[]): string {
+  if (empConfigs) {
+    const cfg = empConfigs.find(c => c.employeeId === empId)
+    if (cfg?.homeBranchId) return cfg.homeBranchId
+  }
+  return DEFAULT_HOME_BRANCHES[empId] ?? 'br-05'
+}
+
+/**
+ * هل الأسبوع weekSun آمن لإعطاء إجازة للموظف empId؟
+ * قاعدة: بعد خصم هذا الموظف، لازم يبقى عدد كافٍ يغطي كل فرع حرج.
+ */
+function isSafeVacationWeek(
+  empId:      string,
+  weekSun:    string,
+  agents:     Employee[],
+  vacDays:    Set<string>,
+  empConfigs?: EmployeeAIConfig[],
+): boolean {
+  const CRITICAL: Array<{ brId: string; need: number }> = [
+    { brId: 'br-02', need: 1 },
+    { brId: 'br-06', need: 1 },
+    { brId: 'br-01', need: 2 },
+    { brId: 'br-04', need: 2 },
+  ]
+  for (const { brId, need } of CRITICAL) {
+    let available = 0
+    for (const e of agents) {
+      if (e.id === empId) continue // هذا الموظف في إجازة
+      if (DEDICATED_IDS.has(e.id)) continue
+      const home = getHomeBranch(e.id, empConfigs)
+      if (Math.abs(geoIdx(home) - geoIdx(brId)) > getMaxGeoDist(home)) continue
+      // تحقق أنه مش في إجازة هذا الأسبوع
+      let onVac = false
+      for (let i = 0; i < 5; i++) {
+        if (vacDays.has(`${e.id}:${addDays(weekSun, i)}`)) { onVac = true; break }
+      }
+      if (!onVac) available++
+    }
+    if (available < need) return false
+  }
+  return true
+}
+
 // ── توزيع الإجازات تلقائياً ───────────────────────────────────────────────────
 export function autoAssignVacations(
   agents:            Employee[],
   existingVacations: VacationWeek[],
   startDate:         string,
   weeks:             number,
+  empConfigs?:       EmployeeAIConfig[],
 ): VacationWeek[] {
   const added      = [] as VacationWeek[]
   const allSundays = Array.from({ length: weeks }, (_, i) => addDays(startDate, i * 7))
@@ -271,6 +317,17 @@ export function autoAssignVacations(
   const needVac = agents.filter(e => !coveredIds.has(e.id))
   if (!needVac.length) return []
 
+  // بناء مجموعة أيام الإجازات الحالية لفحص السلامة
+  const vacDays = new Set<string>()
+  for (const v of existingVacations) {
+    for (let i = 0; i < 7; i++) {
+      const d    = addDays(v.weekStart, i)
+      const dDay = new Date(d + 'T00:00:00').getDay()
+      if (dDay === 5 || dDay === 6) continue
+      vacDays.add(`${v.employeeId}:${d}`)
+    }
+  }
+
   const weekLoad: Record<string, number> = {}
   for (const s of allSundays) weekLoad[s] = 0
   for (const v of existingVacations)
@@ -283,11 +340,27 @@ export function autoAssignVacations(
   for (const emp of shuffled) {
     const avail = allSundays.filter(s => (weekLoad[s] ?? 0) < maxPerWeek)
     if (!avail.length) continue
-    avail.sort((a, b) => (weekLoad[a] ?? 0) - (weekLoad[b] ?? 0))
-    const min  = weekLoad[avail[0]] ?? 0
-    const tied = avail.filter(s => (weekLoad[s] ?? 0) === min)
+
+    // فلترة الأسابيع الآمنة فقط — مفيش أسبوع آمن = تجاوز (الجدول الجاي)
+    const safeWeeks = avail.filter(weekSun =>
+      isSafeVacationWeek(emp.id, weekSun, agents, vacDays, empConfigs),
+    )
+    if (!safeWeeks.length) continue // مفيش أسبوع آمن → الإجازة في الدورة الجاية
+
+    safeWeeks.sort((a, b) => (weekLoad[a] ?? 0) - (weekLoad[b] ?? 0))
+    const min  = weekLoad[safeWeeks[0]] ?? 0
+    const tied = safeWeeks.filter(s => (weekLoad[s] ?? 0) === min)
     const pick = tied[Math.floor(Math.random() * tied.length)]
     weekLoad[pick] = (weekLoad[pick] ?? 0) + 1
+
+    // أضف أيام الإجازة المختارة لمجموعة التتبع (تؤثر على فحوصات الموظفين اللاحقين)
+    for (let i = 0; i < 7; i++) {
+      const d    = addDays(pick, i)
+      const dDay = new Date(d + 'T00:00:00').getDay()
+      if (dDay === 5 || dDay === 6) continue
+      vacDays.add(`${emp.id}:${d}`)
+    }
+
     added.push({ id: `auto-${emp.id}-${pick}`, employeeId: emp.id, weekStart: pick })
   }
   return added
@@ -338,7 +411,7 @@ export function generateAISchedule(
   let autoVacationsAdded: VacationWeek[] = []
 
   if (config.autoVacation) {
-    autoVacationsAdded = autoAssignVacations(agents, config.vacations, config.startDate, config.weeks)
+    autoVacationsAdded = autoAssignVacations(agents, config.vacations, config.startDate, config.weeks, config.empConfigs)
     allVacations       = [...allVacations, ...autoVacationsAdded]
   }
 
@@ -366,8 +439,11 @@ export function generateAISchedule(
 const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
 
 // ── توزيع الفيزيت أسبوعياً ────────────────────────────────────────────────────
-  // مجمع الفيزيت: موظفو المنيا (home=br-05) غير المخصصين للفروع الصغيرة
-  const visitPool    = agents.filter(e => getHome(e) === 'br-05' && !DEDICATED_IDS.has(e.id))
+  // مجمع الفيزيت: كل الموظفين (عدا المخصصين) — حد أقصى MAX_VISITS_PER_PERIOD زيارة/دورة
+  const MAX_VISITS_PER_PERIOD                     = 2
+  const periodVisitCounts: Record<string, number> = {}
+
+  const visitPool    = agents.filter(e => !DEDICATED_IDS.has(e.id))
   const weVisitPool  = visitPool.filter(e => classifyEmp(e) === 'WE')
   const ibsVisitPool = visitPool.filter(e => classifyEmp(e) === 'IBS')
 
@@ -379,27 +455,33 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
     // ── وضع يدوي: استخدم الاختيار المحدد من الـ UI ──
     const manualId = config.visitMode === 'manual' ? config.manualVisits?.[w] : undefined
     if (manualId && visitPool.some(e => e.id === manualId)) {
-      // تحقق أنه مش في إجازة هذا الأسبوع
+      // تحقق أنه مش في إجازة هذا الأسبوع، ولم يتجاوز الحد الأقصى للزيارات
       const onVac = Array.from({ length: 5 }, (_, i) =>
         vacDays.has(`${manualId}:${addDays(weekSun, i)}`),
       ).some(Boolean)
-      if (!onVac) {
+      const limitOK = (periodVisitCounts[manualId] ?? 0) < MAX_VISITS_PER_PERIOD
+      if (!onVac && limitOK) {
         weeklyVisitEmp.set(w, manualId)
-        visitCounts[manualId] = (visitCounts[manualId] ?? 0) + 1
+        visitCounts[manualId]       = (visitCounts[manualId]       ?? 0) + 1
+        periodVisitCounts[manualId] = (periodVisitCounts[manualId] ?? 0) + 1
         if (!visitFirstDay.has(manualId)) visitFirstDay.set(manualId, weekSun)
         continue
       }
+      // تجاوز الحد أو في إجازة → نتجاهل الاختيار اليدوي ونكمل للتلقائي
     }
 
-    // ── وضع تلقائي: WE:IBS = 2:1 ──
+    // ── وضع تلقائي: WE:IBS = 2:1 ——  حد أقصى MAX_VISITS_PER_PERIOD زيارة/دورة ──
     const wantWE    = w % 3 !== 2
     const preferred = (wantWE && weVisitPool.length > 0) ? weVisitPool : ibsVisitPool
     const fallback  = (preferred === weVisitPool) ? ibsVisitPool : weVisitPool
 
     for (const pool of [preferred, fallback, visitPool]) {
       const avail = pool.filter(e => {
+        // لا إجازة هذا الأسبوع
         for (let i = 0; i < 5; i++)
           if (vacDays.has(`${e.id}:${addDays(weekSun, i)}`)) return false
+        // لم يتجاوز الحد الأقصى للزيارات في هذه الدورة
+        if ((periodVisitCounts[e.id] ?? 0) >= MAX_VISITS_PER_PERIOD) return false
         return true
       })
       if (!avail.length) continue
@@ -407,7 +489,8 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
       const tied = avail.filter(e => (visitCounts[e.id] ?? 0) === minV)
       const pick = tied[Math.floor(Math.random() * tied.length)]
       weeklyVisitEmp.set(w, pick.id)
-      visitCounts[pick.id] = (visitCounts[pick.id] ?? 0) + 1
+      visitCounts[pick.id]       = (visitCounts[pick.id]       ?? 0) + 1
+      periodVisitCounts[pick.id] = (periodVisitCounts[pick.id] ?? 0) + 1
       if (!visitFirstDay.has(pick.id)) visitFirstDay.set(pick.id, weekSun)
       break
     }

@@ -268,21 +268,20 @@ export default function AISchedulePage() {
 
   // Preview auto-vacations without generating
   function handlePreviewAutoVac() {
-    const preview = autoAssignVacations(agentList, vacations, startDate, weeks)
+    const preview = autoAssignVacations(agentList, vacations, startDate, weeks, empConfigs)
     saveVacations([...vacations, ...preview])
   }
 
   // ── Visit pool (for manual mode dropdowns) ────────────────────────────────
+  // كل الموظفين مؤهلون للزيارة (ليس فقط موظفو المنيا)
   const visitPool = useMemo(() => {
     const DEDICATED = new Set(['emp-26', 'emp-41', 'emp-22'])
     return agentList.filter(e => {
       if (inactiveIds.includes(e.id)) return false
       if (DEDICATED.has(e.id)) return false
-      const cfg  = empConfigs.find(c => c.employeeId === e.id)
-      const home = cfg?.homeBranchId ?? DEFAULT_HOME_BRANCHES[e.id] ?? ''
-      return home === 'br-05'
+      return true
     })
-  }, [agentList, empConfigs, inactiveIds])
+  }, [agentList, inactiveIds])
 
   // ── Generate ───────────────────────────────────────────────────────────────
   function handleGenerate() {
@@ -563,7 +562,7 @@ export default function AISchedulePage() {
 
         {visitMode === 'auto' && (
           <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
-            الخوارزمية تختار موظف من المنيا كل أسبوع (WE:IBS = 2:1) — توزيع دوري عادل
+            الخوارزمية تختار من كل الموظفين (WE:IBS = 2:1) — حد أقصى زيارتين لكل موظف في الدورة، توزيع عادل على الجميع
           </p>
         )}
 
