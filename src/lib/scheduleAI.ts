@@ -431,14 +431,18 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
   }
 
   // الزيارات الخارجية
+  // الزيارة: أحد-خميس عمل
+  // قبلها: خميس (-3) + جمعة (-2) + سبت (-1) الأسبوع السابق = راحة
+  // بعدها: جمعة (+5) + سبت (+6) = راحة — ثم شيفت عادي من الأحد التالي
   for (const [w, empId] of weeklyVisitEmp.entries()) {
     const ws = addDays(config.startDate, w * 7)
-    // الأسبوع السابق (W-1): جمعة (-2) وسبت (-1)
-    forcedOffDays.add(`${empId}:${addDays(ws, -2)}`)
-    forcedOffDays.add(`${empId}:${addDays(ws, -1)}`)
-    // نفس أسبوع الزيارة: جمعة (+5) وسبت (+6) — تأكيد إضافي (حلقة الوكلاء تعالجها بالفعل)
-    forcedOffDays.add(`${empId}:${addDays(ws, 5)}`)
-    forcedOffDays.add(`${empId}:${addDays(ws, 6)}`)
+    // الأسبوع السابق (W-1): خميس+جمعة+سبت راحة
+    forcedOffDays.add(`${empId}:${addDays(ws, -3)}`) // خميس W-1
+    forcedOffDays.add(`${empId}:${addDays(ws, -2)}`) // جمعة W-1
+    forcedOffDays.add(`${empId}:${addDays(ws, -1)}`) // سبت W-1
+    // نفس أسبوع الزيارة: جمعة+سبت راحة
+    forcedOffDays.add(`${empId}:${addDays(ws, 5)}`)  // جمعة W
+    forcedOffDays.add(`${empId}:${addDays(ws, 6)}`)  // سبت W
   }
 
   // ── الحلقة اليومية ───────────────────────────────────────────────────────────
