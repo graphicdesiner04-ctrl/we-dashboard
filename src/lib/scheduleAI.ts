@@ -926,11 +926,13 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
       const smallSubIds = smallSubSet ? new Set(smallSubSet.values()) : new Set<string>()
 
       // البحث عن مرشحين: موظف يوم عمله هذا اليوم لكن لديه مدخل 'annual' أو 'off'
-      // (أي: في إجازة سنوية، أو راحة قسرية قبل/بعد إجازة أو زيارة)
+      // استثناء: أيام forcedOffDays (جمعة/سبت/خميس قبل+بعد الإجازة) لا تُلغى أبداً
       const candidates = agents
         .filter(emp => {
           if (DEDICATED_IDS.has(emp.id)) return false
           if (smallSubIds.has(emp.id))   return false // بديل فرع صغير لا يتحرك
+          // ✗ لا يجوز إلغاء راحة جبرية (خميس/جمعة/سبت قبل وبعد الإجازة أو الزيارة)
+          if (forcedOffDays.has(`${emp.id}:${date}`)) return false
           const shift = getShift(emp.id)
           // لازم يكون يوم عمله الطبيعي
           if (!isWorkDay(shift, weekNum + weekOffset, d)) return false
