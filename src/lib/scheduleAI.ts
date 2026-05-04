@@ -420,14 +420,17 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
   const forcedOffDays = new Set<string>() // "empId:date"
 
   // الإجازات السنوية
+  // قبل الإجازة: خميس (-3) + جمعة (-2) + سبت (-1) = راحة (نفس قاعدة الزيارة)
+  // بعد الإجازة أحد-خميس: جمعة (+5) + سبت (+6) = راحة
   for (const v of allVacations) {
     const ws = v.weekStart // أحد بداية أسبوع الإجازة
-    // الأسبوع السابق (W-1): جمعة (-2) وسبت (-1)
-    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -2)}`)
-    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -1)}`)
-    // نفس أسبوع الإجازة (بعد أحد-خميس): جمعة (+5) وسبت (+6)
-    forcedOffDays.add(`${v.employeeId}:${addDays(ws, 5)}`)
-    forcedOffDays.add(`${v.employeeId}:${addDays(ws, 6)}`)
+    // الأسبوع السابق (W-1): خميس+جمعة+سبت راحة
+    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -3)}`) // خميس W-1
+    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -2)}`) // جمعة W-1
+    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -1)}`) // سبت W-1
+    // نفس أسبوع الإجازة (بعد أحد-خميس): جمعة+سبت راحة
+    forcedOffDays.add(`${v.employeeId}:${addDays(ws, 5)}`)  // جمعة W
+    forcedOffDays.add(`${v.employeeId}:${addDays(ws, 6)}`)  // سبت W
   }
 
   // الزيارات الخارجية
@@ -792,6 +795,22 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
 
       // هل هذا الموظف بديل فرع صغير هذا الأسبوع؟
       // البديل يشتغل Sat-Thu في الفرع الصغير بغض النظر عن شيفته
+      // ══ أولوية 1: فيزيت — يتخطى كل القيود (شيفت، راحة، forcedOff) ══════════════
+      // موظف الفيزيت يشتغل أحد–خميس كامل بدون استثناء
+      if (weeklyVisitEmp.get(weekNum) === agent.id) {
+        if (d <= 4) {
+          push(agent.id, {
+            employeeId: agent.id, date,
+            cellType: 'visit', startTime: '09:00', endTime: '17:00',
+            note: 'AI — زيارة خارجية',
+          })
+        } else {
+          push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة' })
+        }
+        continue
+      }
+
+      // ══ أولوية 2: بديل فرع صغير ══════════════════════════════════════════════
       const smallSubEntry = weeklySmallSub.get(weekNum)
       const smallSubBrId  = smallSubEntry
         ? [...smallSubEntry.entries()].find(([, sid]) => sid === agent.id)?.[0]
@@ -810,7 +829,36 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
         continue
       }
 
-      // ── راحة جبرية: جمعة+سبت قبل/بعد إجازة سنوية أو زيارة ──────────────────
+      // ══ أولوية 3: أحد العودة بعد إجازة أو زيارة ════════════════════════════
+      // لو الأسبوع السابق كان إجازة أو زيارة، والأحد ده مش يوم عمله الطبيعي
+      // (شيفت خفيف: سبت+ثلاثاء+أربعاء) → يشتغل الأحد في فرعه 9→5
+      if (d === 0 && weekNum > 0) {
+        const prevWeekSun  = addDays(config.startDate, (weekNum - 1) * 7)
+        const hadVacPrev   = allVacations.some(v => v.employeeId === agent.id && v.weekStart === prevWeekSun)
+        const hadVisitPrev = weeklyVisitEmp.get(weekNum - 1) === agent.id
+
+        if (hadVacPrev || hadVisitPrev) {
+          const shift = getShift(agent.id)
+          if (!isWorkDay(shift, weekNum + weekOffset, 0)) {
+            // الأحد ليس يوم عمله (شيفت خفيف) → يشتغل 9–5 في فرعه الأسبوعي
+            const weekMap  = shift === 'A' ? weeklyAssignA.get(weekNum) : weeklyAssignB.get(weekNum)
+            let returnBrId = weekMap?.get(agent.id) ?? getHome(agent)
+            // أمان: لا يذهب لفرع غير متاح (visit/Minya لموظفي الجنوب)
+            if (returnBrId === 'visit' || (returnBrId === 'br-05' && SOUTH_HOMES.has(getHome(agent)))) {
+              returnBrId = getHome(agent)
+            }
+            push(agent.id, {
+              employeeId: agent.id, branchId: returnBrId, date,
+              cellType: 'branch', startTime: '09:00', endTime: '17:00',
+              note: 'AI — أحد عودة بعد إجازة (9→5)',
+            })
+            continue
+          }
+          // إذا كان الأحد يوم عمله (شيفت ثقيل) → يكمل طبيعياً بدون استثناء
+        }
+      }
+
+      // ── راحة جبرية: خميس+جمعة+سبت قبل/بعد إجازة أو زيارة ──────────────────
       if (forcedOffDays.has(`${agent.id}:${date}`)) {
         push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة (إجازة/زيارة)' })
         continue
@@ -820,18 +868,7 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
       const weekMap  = shift === 'A' ? weeklyAssignA.get(weekNum) : weeklyAssignB.get(weekNum)
       const assigned = weekMap?.get(agent.id)
 
-      if (assigned === 'visit') {
-        // فيزيت: أحد–خميس عمل، جمعة+سبت راحة (يتخطى نظام الشيفت)
-        if (d <= 4) {
-          push(agent.id, {
-            employeeId: agent.id, date,
-            cellType: 'visit', startTime: '09:00', endTime: '17:00',
-            note: 'AI — زيارة خارجية',
-          })
-        } else {
-          push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة' })
-        }
-      } else if (!isWorkDay(shift, weekNum + weekOffset, d)) {
+      if (!isWorkDay(shift, weekNum + weekOffset, d)) {
         // يوم راحة لهذا الشيفت هذا الأسبوع
         push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة' })
       } else {
