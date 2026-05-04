@@ -419,33 +419,38 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
   //          ثم الشيفت يبدأ طبيعياً من الأحد التالي
   const forcedOffDays = new Set<string>() // "empId:date"
 
+  // ─── نوعان من الراحة الإجبارية ───────────────────────────────────────────────
+  // hardForcedOff  = جمعة+سبت بعد الإجازة/الزيارة → لا تُلغى حتى للتغطية الطارئة
+  // forcedOffDays  = كل أيام الراحة (يشمل hardForcedOff + خميس/جمعة/سبت قبلها)
+  //                  يمكن للتغطية الطارئة تجاوز أيام forcedOff غير الـ hard فقط
+  const hardForcedOff = new Set<string>() // "empId:date" — راحة مطلقة بعد الإجازة/الزيارة
+
   // الإجازات السنوية
-  // قبل الإجازة: خميس (-3) + جمعة (-2) + سبت (-1) = راحة (نفس قاعدة الزيارة)
-  // بعد الإجازة أحد-خميس: جمعة (+5) + سبت (+6) = راحة
   for (const v of allVacations) {
-    const ws = v.weekStart // أحد بداية أسبوع الإجازة
-    // الأسبوع السابق (W-1): خميس+جمعة+سبت راحة
-    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -3)}`) // خميس W-1
-    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -2)}`) // جمعة W-1
-    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -1)}`) // سبت W-1
-    // نفس أسبوع الإجازة (بعد أحد-خميس): جمعة+سبت راحة
-    forcedOffDays.add(`${v.employeeId}:${addDays(ws, 5)}`)  // جمعة W
-    forcedOffDays.add(`${v.employeeId}:${addDays(ws, 6)}`)  // سبت W
+    const ws = v.weekStart
+    // قبل الإجازة (W-1): خميس+جمعة+سبت — راحة عادية (forcedOff فقط)
+    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -3)}`)
+    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -2)}`)
+    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -1)}`)
+    // بعد الإجازة (W): جمعة+سبت — راحة مطلقة (hard)
+    const fri = `${v.employeeId}:${addDays(ws, 5)}`
+    const sat = `${v.employeeId}:${addDays(ws, 6)}`
+    forcedOffDays.add(fri);  hardForcedOff.add(fri)
+    forcedOffDays.add(sat);  hardForcedOff.add(sat)
   }
 
   // الزيارات الخارجية
-  // الزيارة: أحد-خميس عمل
-  // قبلها: خميس (-3) + جمعة (-2) + سبت (-1) الأسبوع السابق = راحة
-  // بعدها: جمعة (+5) + سبت (+6) = راحة — ثم شيفت عادي من الأحد التالي
   for (const [w, empId] of weeklyVisitEmp.entries()) {
     const ws = addDays(config.startDate, w * 7)
-    // الأسبوع السابق (W-1): خميس+جمعة+سبت راحة
-    forcedOffDays.add(`${empId}:${addDays(ws, -3)}`) // خميس W-1
-    forcedOffDays.add(`${empId}:${addDays(ws, -2)}`) // جمعة W-1
-    forcedOffDays.add(`${empId}:${addDays(ws, -1)}`) // سبت W-1
-    // نفس أسبوع الزيارة: جمعة+سبت راحة
-    forcedOffDays.add(`${empId}:${addDays(ws, 5)}`)  // جمعة W
-    forcedOffDays.add(`${empId}:${addDays(ws, 6)}`)  // سبت W
+    // قبل الزيارة (W-1): خميس+جمعة+سبت — راحة عادية
+    forcedOffDays.add(`${empId}:${addDays(ws, -3)}`)
+    forcedOffDays.add(`${empId}:${addDays(ws, -2)}`)
+    forcedOffDays.add(`${empId}:${addDays(ws, -1)}`)
+    // بعد الزيارة (W): جمعة+سبت — راحة مطلقة (hard)
+    const fri = `${empId}:${addDays(ws, 5)}`
+    const sat = `${empId}:${addDays(ws, 6)}`
+    forcedOffDays.add(fri);  hardForcedOff.add(fri)
+    forcedOffDays.add(sat);  hardForcedOff.add(sat)
   }
 
   // ── الحلقة اليومية ───────────────────────────────────────────────────────────
@@ -931,8 +936,9 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
         .filter(emp => {
           if (DEDICATED_IDS.has(emp.id)) return false
           if (smallSubIds.has(emp.id))   return false // بديل فرع صغير لا يتحرك
-          // ✗ لا يجوز إلغاء راحة جبرية (خميس/جمعة/سبت قبل وبعد الإجازة أو الزيارة)
-          if (forcedOffDays.has(`${emp.id}:${date}`)) return false
+          // ✗ لا يجوز إلغاء راحة ما بعد الإجازة/الزيارة (جمعة+سبت بعدها) — hard rule
+          // ✓ يجوز إلغاء راحة ما قبلها (خميس+جمعة+سبت قبلها) إذا كان الفرع فارغاً
+          if (hardForcedOff.has(`${emp.id}:${date}`)) return false
           const shift = getShift(emp.id)
           // لازم يكون يوم عمله الطبيعي
           if (!isWorkDay(shift, weekNum + weekOffset, d)) return false
