@@ -851,7 +851,101 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
       }
     }
 
-    // تحقق من التغطية الدنيا للفروع
+    // ══ احتياطي: راحة لأي سينيور لم يُعالَج بعد ══════════════════════════════
+    // (يُغطي حالات الإجازات والسينيورز خارج القوائم المعتادة)
+    for (const sen of seniors) {
+      if (usedToday.has(sen.id) || isVac(sen.id)) continue
+      entries.push({ employeeId: sen.id, date, cellType: 'off', note: 'راحة' })
+    }
+  }
+
+  // ── Post-processing: تغطية طارئة — أولوية الفرع على الإجازة ─────────────────
+  // القاعدة: ممنوع يبقى فرع بدون موظف مهما كان الظروف
+  // إذا كان فرع فاضياً في يوم ما، نأخذ أقرب موظف متاح (ولو في إجازة أو راحة قسرية)
+  // الشرط: لازم يكون يوم عمله الطبيعي بحسب الشيفت، وضمن النطاق الجغرافي
+
+  const BRANCHES_WITH_MIN: Array<{ brId: string; need: number }> = [
+    { brId: 'br-02', need: 1 },
+    { brId: 'br-06', need: 1 },
+    { brId: 'br-01', need: 2 },
+    { brId: 'br-04', need: 2 },
+  ]
+
+  for (let dayIdx = 0; dayIdx < totalDays; dayIdx++) {
+    const date    = addDays(config.startDate, dayIdx)
+    const d       = dow(date)
+    const weekNum = Math.floor(dayIdx / 7)
+
+    for (const { brId, need } of BRANCHES_WITH_MIN) {
+      const got = entries.filter(e =>
+        e.date === date && e.branchId === brId && e.cellType === 'branch' &&
+        agents.some(a => a.id === e.employeeId),
+      ).length
+
+      if (got >= need) continue // مكتمل ✓
+
+      const shortfall = need - got
+      const smallSubSet = weeklySmallSub.get(weekNum)
+      const smallSubIds = smallSubSet ? new Set(smallSubSet.values()) : new Set<string>()
+
+      // البحث عن مرشحين: موظف يوم عمله هذا اليوم لكن لديه مدخل 'annual' أو 'off'
+      // (أي: في إجازة سنوية، أو راحة قسرية قبل/بعد إجازة أو زيارة)
+      const candidates = agents
+        .filter(emp => {
+          if (DEDICATED_IDS.has(emp.id)) return false
+          if (smallSubIds.has(emp.id))   return false // بديل فرع صغير لا يتحرك
+          const shift = getShift(emp.id)
+          // لازم يكون يوم عمله الطبيعي
+          if (!isWorkDay(shift, weekNum + weekOffset, d)) return false
+          // لازم ضمن النطاق الجغرافي للفرع المطلوب
+          if (Math.abs(geoIdx(getHome(emp)) - geoIdx(brId)) > getMaxGeoDist(getHome(emp))) return false
+          // لازم مش بيشتغل في فرع آخر نفس اليوم
+          if (entries.some(e => e.date === date && e.employeeId === emp.id && e.cellType === 'branch')) return false
+          // لازم عنده مدخل 'annual' أو 'off' (لو عنده شيء آخر، هو مشغول)
+          return entries.some(e =>
+            e.date === date && e.employeeId === emp.id &&
+            (e.cellType === 'annual' || e.cellType === 'off'),
+          )
+        })
+        .sort((a, b) => {
+          // الأولوية: موظف الفرع نفسه أولاً، ثم الأقرب جغرافياً
+          const aHome = getHome(a) === brId ? 0 : 1
+          const bHome = getHome(b) === brId ? 0 : 1
+          if (aHome !== bHome) return aHome - bHome
+          return (
+            Math.abs(geoIdx(getHome(a)) - geoIdx(brId)) -
+            Math.abs(geoIdx(getHome(b)) - geoIdx(brId))
+          )
+        })
+
+      for (let i = 0; i < shortfall && i < candidates.length; i++) {
+        const emp     = candidates[i]
+        const endTime = d === 5 ? '16:00' : '21:00'
+
+        // احذف مدخل الإجازة أو الراحة لهذا اليوم
+        const idx = entries.findIndex(e =>
+          e.date === date && e.employeeId === emp.id &&
+          (e.cellType === 'annual' || e.cellType === 'off'),
+        )
+        if (idx >= 0) entries.splice(idx, 1)
+
+        // أضف مدخل فرع بدلاً منه
+        entries.push({
+          employeeId: emp.id,
+          branchId:   brId,
+          date,
+          cellType:   'branch',
+          startTime:  '09:00',
+          endTime,
+          note:       'AI — تغطية طارئة (أولوية الفرع)',
+        })
+      }
+    }
+  }
+
+  // ── حساب التحذيرات — بعد الـ post-processing ─────────────────────────────────
+  for (let dayIdx = 0; dayIdx < totalDays; dayIdx++) {
+    const date = addDays(config.startDate, dayIdx)
     for (const [brId, need] of [['br-02', 1], ['br-06', 1], ['br-01', 2], ['br-04', 2]] as const) {
       const got = entries.filter(e =>
         e.date === date && e.branchId === brId && e.cellType === 'branch' &&
@@ -861,13 +955,6 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
         const br = brMap.get(brId)
         warnings.push({ date, branchId: brId, branchNameAr: br?.storeNameAr ?? brId, need, got })
       }
-    }
-
-    // ══ احتياطي: راحة لأي سينيور لم يُعالَج بعد ══════════════════════════════
-    // (يُغطي حالات الإجازات والسينيورز خارج القوائم المعتادة)
-    for (const sen of seniors) {
-      if (usedToday.has(sen.id) || isVac(sen.id)) continue
-      entries.push({ employeeId: sen.id, date, cellType: 'off', note: 'راحة' })
     }
   }
 
