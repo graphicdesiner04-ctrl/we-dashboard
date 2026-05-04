@@ -362,7 +362,10 @@ export function generateAISchedule(
     }
   }
 
-  // ── توزيع الفيزيت أسبوعياً ────────────────────────────────────────────────────
+  // ── الفروع الجنوبية — ممنوع إرسال موظفيها للمنيا ─────────────────────────────
+const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
+
+// ── توزيع الفيزيت أسبوعياً ────────────────────────────────────────────────────
   // مجمع الفيزيت: موظفو المنيا (home=br-05) غير المخصصين للفروع الصغيرة
   const visitPool    = agents.filter(e => getHome(e) === 'br-05' && !DEDICATED_IDS.has(e.id))
   const weVisitPool  = visitPool.filter(e => classifyEmp(e) === 'WE')
@@ -408,6 +411,34 @@ export function generateAISchedule(
       if (!visitFirstDay.has(pick.id)) visitFirstDay.set(pick.id, weekSun)
       break
     }
+  }
+
+  // ── راحة جبرية: جمعة+سبت قبل وبعد الإجازة السنوية والزيارة ─────────────────
+  // القاعدة: قبل الإجازة/الزيارة (أسبوع W-1): جمعة+سبت = راحة
+  //          بعدها (أسبوع W نفسه):             جمعة+سبت = راحة
+  //          ثم الشيفت يبدأ طبيعياً من الأحد التالي
+  const forcedOffDays = new Set<string>() // "empId:date"
+
+  // الإجازات السنوية
+  for (const v of allVacations) {
+    const ws = v.weekStart // أحد بداية أسبوع الإجازة
+    // الأسبوع السابق (W-1): جمعة (-2) وسبت (-1)
+    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -2)}`)
+    forcedOffDays.add(`${v.employeeId}:${addDays(ws, -1)}`)
+    // نفس أسبوع الإجازة (بعد أحد-خميس): جمعة (+5) وسبت (+6)
+    forcedOffDays.add(`${v.employeeId}:${addDays(ws, 5)}`)
+    forcedOffDays.add(`${v.employeeId}:${addDays(ws, 6)}`)
+  }
+
+  // الزيارات الخارجية
+  for (const [w, empId] of weeklyVisitEmp.entries()) {
+    const ws = addDays(config.startDate, w * 7)
+    // الأسبوع السابق (W-1): جمعة (-2) وسبت (-1)
+    forcedOffDays.add(`${empId}:${addDays(ws, -2)}`)
+    forcedOffDays.add(`${empId}:${addDays(ws, -1)}`)
+    // نفس أسبوع الزيارة: جمعة (+5) وسبت (+6) — تأكيد إضافي (حلقة الوكلاء تعالجها بالفعل)
+    forcedOffDays.add(`${empId}:${addDays(ws, 5)}`)
+    forcedOffDays.add(`${empId}:${addDays(ws, 6)}`)
   }
 
   // ── الحلقة اليومية ───────────────────────────────────────────────────────────
@@ -610,16 +641,24 @@ export function generateAISchedule(
       }
 
       // 2. لا أولوية → المنيا إن كانت ضمن النطاق
-      if (!target && Math.abs(geoIdx('br-05') - homePos) <= maxDist && notFull('br-05')) {
+      //    ممنوع: موظفو دلجا/دير مواس/ملوي لا يذهبون للمنيا أبداً
+      if (
+        !target &&
+        !SOUTH_HOMES.has(getHome(emp)) &&
+        Math.abs(geoIdx('br-05') - homePos) <= maxDist &&
+        notFull('br-05')
+      ) {
         target = 'br-05'
       }
 
       // 3. المنيا بعيدة (دير مواس/ملوي) → أقرب شمالاً ضمن النطاق
+      //    موظفو دلجا/دير مواس/ملوي ممنوع إرسالهم للمنيا
       if (!target) {
         const northFirst = [...MAIN_FALLBACK]
           .filter(br =>
             Math.abs(geoIdx(br) - homePos) <= maxDist &&
-            notFull(br),
+            notFull(br) &&
+            !(br === 'br-05' && SOUTH_HOMES.has(getHome(emp))),
           )
           .sort((a, b) => {
             // تصاعد نحو الشمال (geo index أكبر = أشمل): فضّل geoIdx أعلى
@@ -767,6 +806,12 @@ export function generateAISchedule(
         continue
       }
 
+      // ── راحة جبرية: جمعة+سبت قبل/بعد إجازة سنوية أو زيارة ──────────────────
+      if (forcedOffDays.has(`${agent.id}:${date}`)) {
+        push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة (إجازة/زيارة)' })
+        continue
+      }
+
       const shift    = getShift(agent.id)
       const weekMap  = shift === 'A' ? weeklyAssignA.get(weekNum) : weeklyAssignB.get(weekNum)
       const assigned = weekMap?.get(agent.id)
@@ -787,7 +832,12 @@ export function generateAISchedule(
         push(agent.id, { employeeId: agent.id, date, cellType: 'off', note: 'راحة' })
       } else {
         // يوم عمل — الفرع المُعيَّن للأسبوع
-        const branchId = assigned ?? 'br-05' // احتياطي: المنيا
+        // احتياطي: المنيا — إلا لموظفي الجنوب (دلجا/دير مواس/ملوي) → فرعهم الأصلي
+        const branchId = assigned && assigned !== 'br-05'
+          ? assigned
+          : SOUTH_HOMES.has(getHome(agent))
+            ? getHome(agent)
+            : assigned ?? 'br-05'
         const endTime  = d === 5 ? '16:00' : '21:00' // جمعة 7 ساعات
         push(agent.id, {
           employeeId: agent.id, branchId, date,
