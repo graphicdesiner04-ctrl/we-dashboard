@@ -182,6 +182,13 @@ export interface AIConfig {
   visitMode:         'auto' | 'manual'
   /** weekNum → empId — يُستخدم فقط عند visitMode = 'manual' */
   manualVisits:      Record<number, string>
+  /**
+   * سياق الجدول السابق — للاستمرارية عبر الدورات
+   * prevPeriodVisitEmpId : موظف الفيزيت في آخر أسبوع من الجدول السابق
+   * prevPeriodVacEmpIds  : كل موظفي الإجازة في الدورة السابقة (لا يأخذون تلقائياً مرة أخرى)
+   */
+  prevPeriodVisitEmpId?: string
+  prevPeriodVacEmpIds?:  string[]
 }
 
 // مرجع الأسبوع: الأحد 5 أبريل 2026 = أسبوع 0 (زوجي) → شيفت B ثقيل
@@ -299,21 +306,25 @@ function isSafeVacationWeek(
 
 // ── توزيع الإجازات تلقائياً ───────────────────────────────────────────────────
 export function autoAssignVacations(
-  agents:            Employee[],
-  existingVacations: VacationWeek[],
-  startDate:         string,
-  weeks:             number,
-  empConfigs?:       EmployeeAIConfig[],
+  agents:               Employee[],
+  existingVacations:    VacationWeek[],
+  startDate:            string,
+  weeks:                number,
+  empConfigs?:          EmployeeAIConfig[],
+  prevPeriodVacEmpIds?: string[], // موظفو إجازة الدورة السابقة — لا يأخذون إجازة تلقائية مرة أخرى
 ): VacationWeek[] {
   const added      = [] as VacationWeek[]
   const allSundays = Array.from({ length: weeks }, (_, i) => addDays(startDate, i * 7))
   const periodEnd  = addDays(startDate, weeks * 7 - 1)
 
-  const coveredIds = new Set(
-    existingVacations
+  const coveredIds = new Set([
+    // إجازات مدخلة يدوياً في هذه الدورة
+    ...existingVacations
       .filter(v => v.weekStart >= startDate && v.weekStart <= periodEnd)
       .map(v => v.employeeId),
-  )
+    // موظفو الدورة السابقة لا يحتاجون إجازة تلقائية الآن
+    ...(prevPeriodVacEmpIds ?? []),
+  ])
   const needVac = agents.filter(e => !coveredIds.has(e.id))
   if (!needVac.length) return []
 
@@ -411,7 +422,10 @@ export function generateAISchedule(
   let autoVacationsAdded: VacationWeek[] = []
 
   if (config.autoVacation) {
-    autoVacationsAdded = autoAssignVacations(agents, config.vacations, config.startDate, config.weeks, config.empConfigs)
+    autoVacationsAdded = autoAssignVacations(
+      agents, config.vacations, config.startDate, config.weeks,
+      config.empConfigs, config.prevPeriodVacEmpIds,
+    )
     allVacations       = [...allVacations, ...autoVacationsAdded]
   }
 
@@ -920,10 +934,21 @@ const SOUTH_HOMES = new Set(['br-03', 'br-02', 'br-01'])
       // ══ أولوية 3: أحد العودة بعد إجازة أو زيارة ════════════════════════════
       // لو الأسبوع السابق كان إجازة أو زيارة، والأحد ده مش يوم عمله الطبيعي
       // (شيفت خفيف: سبت+ثلاثاء+أربعاء) → يشتغل الأحد في فرعه 9→5
-      if (d === 0 && weekNum > 0) {
-        const prevWeekSun  = addDays(config.startDate, (weekNum - 1) * 7)
-        const hadVacPrev   = allVacations.some(v => v.employeeId === agent.id && v.weekStart === prevWeekSun)
-        const hadVisitPrev = weeklyVisitEmp.get(weekNum - 1) === agent.id
+      // يشمل الأسبوع 0 (أول أسبوع من الجدول الجديد) باستخدام سياق الجدول السابق
+      if (d === 0) {
+        let hadVacPrev   = false
+        let hadVisitPrev = false
+
+        if (weekNum > 0) {
+          // داخل نفس الجدول — تحقق من الأسبوع السابق
+          const prevWeekSun = addDays(config.startDate, (weekNum - 1) * 7)
+          hadVacPrev   = allVacations.some(v => v.employeeId === agent.id && v.weekStart === prevWeekSun)
+          hadVisitPrev = weeklyVisitEmp.get(weekNum - 1) === agent.id
+        } else {
+          // أسبوع 0 — استخدم سياق الجدول السابق المحفوظ
+          hadVacPrev   = (config.prevPeriodVacEmpIds ?? []).includes(agent.id)
+          hadVisitPrev = config.prevPeriodVisitEmpId === agent.id
+        }
 
         if (hadVacPrev || hadVisitPrev) {
           const shift = getShift(agent.id)

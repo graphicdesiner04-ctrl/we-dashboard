@@ -26,6 +26,10 @@ const KEY_VISITS        = 'ai-schedule-visit-counts'
 const KEY_INACTIVE      = 'ai-schedule-inactive'
 const KEY_VISIT_MODE    = 'ai-schedule-visit-mode'
 const KEY_MANUAL_VISITS = 'ai-schedule-manual-visits'
+// سياق الجدول السابق — للاستمرارية التلقائية
+const KEY_PREV_END_DATE  = 'ai-schedule-prev-end-date'   // آخر سبت من الجدول المطبَّق
+const KEY_PREV_VISIT_EMP = 'ai-schedule-prev-visit-emp'  // موظف فيزيت آخر أسبوع
+const KEY_PREV_VAC_EMPS  = 'ai-schedule-prev-vac-emps'   // كل موظفي الإجازة من الدورة
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +37,19 @@ function nextSunday(): string {
   const d = new Date()
   d.setDate(d.getDate() + ((7 - d.getDay()) % 7 || 7))
   return d.toISOString().slice(0, 10)
+}
+
+/** إذا طُبِّق جدول سابق وكان يصل مباشرةً لتاريخ اليوم، يُعيد الأحد التالي له */
+function smartStartDate(): string {
+  try {
+    const prevEnd = localStorage.getItem('we-ts-ai-schedule-prev-end-date')?.replace(/"/g, '')
+    if (prevEnd) {
+      const d = new Date(prevEnd + 'T00:00:00')
+      d.setDate(d.getDate() + 1) // الأحد التالي مباشرةً بعد آخر سبت
+      if (d.getDay() === 0) return d.toISOString().slice(0, 10)
+    }
+  } catch { /* ignore */ }
+  return nextSunday()
 }
 
 function fmtDate(iso: string): string {
@@ -211,12 +228,19 @@ export default function AISchedulePage() {
   }
 
   // ── Generation params ──────────────────────────────────────────────────────
-  const [startDate, setStartDate]   = useState(nextSunday)
+  const [startDate, setStartDate]   = useState(smartStartDate)
   const [weeks, setWeeks]           = useState(13)
   const [autoVac, setAutoVac]       = useState(true)
   const [result, setResult]         = useState<AIResult | null>(null)
   const [applied, setApplied]       = useState(false)
   const [resultTab, setResultTab]   = useState<'summary' | 'preview'>('summary')
+
+  // ── سياق الجدول السابق (للاستمرارية التلقائية) ────────────────────────────
+  const [prevContext] = useState(() => ({
+    endDate:    storage.get<string>(KEY_PREV_END_DATE,  ''),
+    visitEmpId: storage.get<string>(KEY_PREV_VISIT_EMP, ''),
+    vacEmpIds:  storage.get<string[]>(KEY_PREV_VAC_EMPS, []),
+  }))
 
   // ── Persistence helpers ────────────────────────────────────────────────────
   const saveEmpConfigs = useCallback((cfgs: EmployeeAIConfig[]) => {
@@ -286,12 +310,21 @@ export default function AISchedulePage() {
   // ── Generate ───────────────────────────────────────────────────────────────
   function handleGenerate() {
     setApplied(false)
+
+    // تحقق إذا الجدول الجديد يكمل مباشرةً الجدول السابق
+    const isConsecutive = prevContext.endDate
+      ? addDays(prevContext.endDate, 1) === startDate
+      : false
+
     const config: AIConfig = {
       startDate, weeks, empConfigs, vacations,
       visitCounts, autoVacation: autoVac,
       inactiveEmployees: inactiveIds,
       visitMode,
       manualVisits,
+      // سياق الجدول السابق (فقط لو الجداول متتالية)
+      prevPeriodVisitEmpId: isConsecutive ? prevContext.visitEmpId || undefined : undefined,
+      prevPeriodVacEmpIds:  isConsecutive ? prevContext.vacEmpIds  : [],
     }
     setResult(generateAISchedule(allEmp, branches, config))
   }
@@ -308,6 +341,21 @@ export default function AISchedulePage() {
     if (result.autoVacationsAdded.length) {
       saveVacations([...vacations, ...result.autoVacationsAdded])
     }
+
+    // ── حفظ سياق الجدول للدورة القادمة ──────────────────────────────────────
+    // آخر يوم من الجدول الحالي (السبت)
+    const newEndDate = addDays(startDate, weeks * 7 - 1)
+    // موظف الفيزيت في آخر أسبوع
+    const lastWeekSun   = addDays(startDate, (weeks - 1) * 7)
+    const lastVisitInfo = result.weekVisits.find(wv => wv.weekStart === lastWeekSun)
+    // كل موظفي الإجازة من الدورة الحالية (يدوي + تلقائي)
+    const allVacIds = [...new Set(
+      [...vacations, ...result.autoVacationsAdded].map(v => v.employeeId),
+    )]
+    storage.set(KEY_PREV_END_DATE,  newEndDate)
+    storage.set(KEY_PREV_VISIT_EMP, lastVisitInfo?.employee.id ?? '')
+    storage.set(KEY_PREV_VAC_EMPS,  allVacIds)
+
     setApplied(true)
   }
 
@@ -334,6 +382,11 @@ export default function AISchedulePage() {
 
   const isSunday = new Date(startDate).getDay() === 0
 
+  // هل الجدول الجديد يكمل الجدول السابق مباشرةً؟
+  const isConsecutiveToPrev = prevContext.endDate
+    ? addDays(prevContext.endDate, 1) === startDate
+    : false
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="max-w-4xl mx-auto" dir="rtl">
@@ -358,6 +411,25 @@ export default function AISchedulePage() {
 
       {/* ── 1. Period ───────────────────────────────────────────────────── */}
       <SectionCard title="فترة التوليد" icon={CalendarDays}>
+
+        {/* شريط الاستمرارية */}
+        {isConsecutiveToPrev && (
+          <div
+            className="mb-3 p-2.5 rounded-xl flex items-center gap-2"
+            style={{ background: 'rgba(134,239,172,0.08)', border: '1px solid rgba(134,239,172,0.2)' }}
+          >
+            <CheckCircle size={13} color="#86EFAC" className="flex-shrink-0" />
+            <p className="text-xs" style={{ color: '#86EFAC' }}>
+              <strong>استمرارية تلقائية</strong> — يكمل الجدول السابق ({prevContext.endDate})
+              {prevContext.visitEmpId && (
+                <span style={{ color: 'rgba(255,255,255,0.4)' }}>
+                  {' '}· آخر فيزيت: {allEmp.find(e => e.id === prevContext.visitEmpId)?.name ?? prevContext.visitEmpId}
+                </span>
+              )}
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-xs font-semibold mb-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
